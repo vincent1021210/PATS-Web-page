@@ -180,9 +180,12 @@ git remote add origin https://github.com/<你的帳號>/<repo>.git
 git push -u origin main
 ```
 
-網站檔案就放在 repo 根目錄，所以 Pages 的 Source 設成
-**GitHub Actions** 或 **Deploy from a branch（main / root）** 都可以，
-兩種都會讓 `https://<你的帳號>.github.io/<repo>/` 直接是登入頁。
+網站檔案就放在 repo 根目錄，Pages 的 Source 使用
+**Deploy from a branch（main / root）**，GitHub 內建的建置流程會自動發佈，
+`https://<你的帳號>.github.io/<repo>/` 就是登入頁。
+
+> 這裡刻意**不**放自訂的 Actions workflow。兩條發佈路徑同時存在時，
+> 會搶同一個 Pages 部署鎖而互相卡死。
 
 推上 `main` 後等一兩分鐘，記得用 `Ctrl + F5` 強制重新整理，
 否則瀏覽器可能還拿著舊版的 HTML。
