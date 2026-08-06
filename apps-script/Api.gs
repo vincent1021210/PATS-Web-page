@@ -5,6 +5,25 @@
  * apiCall() 分派並負責錯誤包裝。
  */
 
+/* --------------------------------------------------------------- 呼叫守衛 */
+
+/**
+ * 所有 api* 函式的 user 參數都由 Code.gs 的 apiCall() 帶入，
+ * 從編輯器下拉選單直接執行時會是 undefined。這裡先擋下來並說明該執行什麼，
+ * 免得使用者看到毫無頭緒的 TypeError。
+ */
+function requireApiContext_(user) {
+  if (!user || !user.id) {
+    throw new Error(
+      '這個函式是給前端透過 API 呼叫的，不能從編輯器直接執行。' +
+      '可以手動執行的只有三個：setup()（建立資料庫）、' +
+      'createAdminAccount()（建立管理員帳號）、' +
+      'purgeExpiredSessions()（清理過期工作階段）。'
+    );
+  }
+  return user;
+}
+
 /* ------------------------------------------------------------ 共用查詢工具 */
 
 function userMap_() {
@@ -46,6 +65,7 @@ function conversationAvatar_(conv, participants, users, meId) {
 /* -------------------------------------------------------------- 啟動載入 */
 
 function apiBootstrap(user) {
+  requireApiContext_(user);
   return {
     user: publicUser_(user),
     serverTime: nowIso_(),
@@ -59,6 +79,7 @@ function apiBootstrap(user) {
  * scope: 'dm' 私人訊息 / 'group' 多人討論 / 'archive' 封存
  */
 function apiListConversations(user, payload) {
+  requireApiContext_(user);
   payload = payload || {};
   applyAutoArchive_(user);
 
@@ -155,6 +176,7 @@ function countUnread_(messages, conversationId, userId, lastReadAt) {
 /* ------------------------------------------------------------------ 訊息 */
 
 function apiListMessages(user, payload) {
+  requireApiContext_(user);
   var conversationId = payload.conversationId;
   assertMember_(user.id, conversationId);
   var users = userMap_();
@@ -199,6 +221,7 @@ function apiListMessages(user, payload) {
 }
 
 function apiSendMessage(user, payload) {
+  requireApiContext_(user);
   var conversationId = payload.conversationId;
   assertMember_(user.id, conversationId);
   var body = String(payload.body || '').trim();
@@ -231,6 +254,7 @@ function apiSendMessage(user, payload) {
 }
 
 function apiMarkRead(user, payload) {
+  requireApiContext_(user);
   var row = assertMember_(user.id, payload.conversationId);
   dbUpdate('participants', row.id, { lastReadAt: nowIso_() });
   return true;
@@ -239,6 +263,7 @@ function apiMarkRead(user, payload) {
 /* ---------------------------------------------------------------- 建立對話 */
 
 function apiStartDirect(user, payload) {
+  requireApiContext_(user);
   var peer = findUserByAccount_(payload.account);
   if (!peer) throw new Error('USER_NOT_FOUND');
   if (peer.id === user.id) throw new Error('CANNOT_CHAT_SELF');
@@ -277,6 +302,7 @@ function findDirectConversation_(a, b) {
 }
 
 function apiCreateGroup(user, payload) {
+  requireApiContext_(user);
   var name = String(payload.name || '').trim();
   if (!name) throw new Error('GROUP_NAME_REQUIRED');
 
@@ -346,6 +372,7 @@ function ensureContact_(userId, peerId) {
 }
 
 function apiListContacts(user) {
+  requireApiContext_(user);
   var users = userMap_();
   return dbFilter('contacts', function (c) { return c.userId === user.id; })
     .map(function (c) {
@@ -362,6 +389,7 @@ function apiListContacts(user) {
 }
 
 function apiInviteContact(user, payload) {
+  requireApiContext_(user);
   var peer = findUserByAccount_(payload.account);
   if (!peer) throw new Error('USER_NOT_FOUND');
   if (peer.id === user.id) throw new Error('CANNOT_ADD_SELF');
@@ -373,6 +401,7 @@ function apiInviteContact(user, payload) {
 /* ------------------------------------------------------------------ 封存 */
 
 function apiSetArchived(user, payload) {
+  requireApiContext_(user);
   var row = assertMember_(user.id, payload.conversationId);
   var archived = !!payload.archived;
   dbUpdate('participants', row.id, {
@@ -414,6 +443,7 @@ function applyAutoArchive_(user) {
 /* ------------------------------------------------------------------ 設定 */
 
 function apiUpdateProfile(user, payload) {
+  requireApiContext_(user);
   var patch = {};
   if (payload.username !== undefined) {
     var username = String(payload.username).trim();
@@ -432,11 +462,13 @@ function apiUpdateProfile(user, payload) {
 }
 
 function apiChangePassword(user, payload) {
+  requireApiContext_(user);
   authChangePassword_(user, payload);
   return true;
 }
 
 function apiUpdateSettings(user, payload) {
+  requireApiContext_(user);
   var settings = Object.assign(
     {},
     DEFAULT_USER_SETTINGS,
@@ -450,11 +482,13 @@ function apiUpdateSettings(user, payload) {
 
 /** 「清除快取資料」：只丟掉伺服器端快取，不動訊息本體。 */
 function apiClearCache(user) {
+  requireApiContext_(user);
   CacheService.getScriptCache().removeAll(['conversations:' + user.id, 'messages:' + user.id]);
   return true;
 }
 
 function apiStorageUsage(user) {
+  requireApiContext_(user);
   var mine = {};
   myParticipations_(user.id).forEach(function (p) { mine[p.conversationId] = true; });
   var bytes = 0;
