@@ -62,6 +62,9 @@ function publicActions_() {
     },
     login: function (payload) { return authLogin_(payload); },
     register: function (payload) { return authRegister_(payload); },
+    requestReset: function (payload) { return authRequestReset_(payload); },
+    verifyResetCode: function (payload) { return authVerifyResetCode_(payload); },
+    resetPassword: function (payload) { return authResetPassword_(payload); },
     googleLogin: function (payload) { return authGoogleLogin_(payload); },
     session: function (payload) {
       var user = resolveSession_(payload.token);

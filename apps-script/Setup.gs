@@ -16,13 +16,15 @@ function initializeProject() {
     'PATS 初始化完成。',
     '資料庫試算表：' + url,
     '目前使用者人數：' + userCount,
-    'Google 用戶端 ID：' + (googleClientId_() || '（尚未設定，僅開放帳密登入）')
+    'Google 用戶端 ID：' + (googleClientId_() || '（尚未設定，僅開放帳密登入）'),
+    '驗證碼寄件者：' + Session.getEffectiveUser().getEmail(),
+    '今日還可寄出的信件數：' + MailApp.getRemainingDailyQuota()
   ];
 
   if (userCount === 0) {
     lines.push('');
-    lines.push('下一步：打開 Auth.gs，把 createAdminAccount() 裡的 email 與密碼改成你要的，');
-    lines.push('存檔後執行 createAdminAccount，就會建立第一個可登入的帳號。');
+    lines.push('下一步：到登入頁點「立即註冊」建立第一個帳號，');
+    lines.push('或設定 ADMIN_EMAIL / ADMIN_PASSWORD 指令碼屬性後執行 createAdminAccount。');
   } else {
     lines.push('');
     lines.push('下一步：點右上角「部署」→「新增部署作業」→「網頁應用程式」，');

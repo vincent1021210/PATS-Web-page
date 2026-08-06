@@ -21,6 +21,19 @@ var PatsAuth = (function () {
   function clearError() {
     $('#login-error').classList.add('hidden');
     $('#register-error').classList.add('hidden');
+    $('#reset-error').classList.add('hidden');
+  }
+
+  /** 送出期間鎖住按鈕，避免重複點擊送出兩次請求。 */
+  function busy(selector, label) {
+    var button = $(selector);
+    var original = button.textContent;
+    button.disabled = true;
+    button.textContent = label;
+    return function () {
+      button.disabled = false;
+      button.textContent = original;
+    };
   }
 
   function setBusy(busy) {
@@ -56,11 +69,19 @@ var PatsAuth = (function () {
 
   /* ---------------------------------------------------------------- 註冊 */
 
+  var PANELS = {
+    login: { el: '#login-panel', focus: '#login-account' },
+    register: { el: '#register-panel', focus: '#register-name' },
+    reset: { el: '#reset-panel', focus: '#reset-email' }
+  };
+
   function switchPanel(target) {
     clearError();
-    $('#login-panel').classList.toggle('hidden', target === 'register');
-    $('#register-panel').classList.toggle('hidden', target !== 'register');
-    var focus = $(target === 'register' ? '#register-name' : '#login-account');
+    Object.keys(PANELS).forEach(function (name) {
+      $(PANELS[name].el).classList.toggle('hidden', name !== target);
+    });
+    if (target === 'reset') resetFlow();
+    var focus = $(PANELS[target].focus);
     if (focus) focus.focus();
   }
 
@@ -108,6 +129,106 @@ var PatsAuth = (function () {
         button.disabled = false;
         button.textContent = '建立帳號';
       });
+  }
+
+  /* ------------------------------------------------------------ 忘記密碼 */
+
+  var reset = { email: '', ticket: '' };
+
+  var RESET_STEPS = {
+    1: { form: '#reset-email-form', sub: '輸入你的電子郵件，我們會寄一組驗證碼給你' },
+    2: { form: '#reset-code-form', sub: '' },
+    3: { form: '#reset-password-form', sub: '驗證成功，請設定你的新密碼' }
+  };
+
+  function resetFlow() {
+    reset = { email: '', ticket: '' };
+    ['#reset-email', '#reset-code', '#reset-new', '#reset-confirm'].forEach(function (s) {
+      $(s).value = '';
+    });
+    resetStep(1);
+  }
+
+  function resetStep(step) {
+    Object.keys(RESET_STEPS).forEach(function (n) {
+      $(RESET_STEPS[n].form).classList.toggle('hidden', Number(n) !== step);
+    });
+    PATS.$$('#reset-steps .step').forEach(function (li) {
+      var n = Number(li.getAttribute('data-step'));
+      li.classList.toggle('is-active', n === step);
+      li.classList.toggle('is-done', n < step);
+    });
+    $('#reset-sub').textContent = RESET_STEPS[step].sub ||
+      ('驗證碼已寄到 ' + reset.email + '，請查看收件匣');
+    var focus = { 1: '#reset-email', 2: '#reset-code', 3: '#reset-new' }[step];
+    if ($(focus)) $(focus).focus();
+  }
+
+  function sendResetCode(isResend) {
+    clearError();
+    var email = $('#reset-email').value.trim();
+    var done = busy(isResend ? '#reset-resend' : '#reset-email-submit', '寄送中…');
+
+    return PATS.rpc('requestReset', { email: email })
+      .then(function () {
+        reset.email = email;
+        // 後端刻意不透露信箱是否存在，所以這裡一律往下一步走。
+        if (!isResend) resetStep(2);
+        else PATS.toast('驗證碼已重新寄出。', 'success');
+      })
+      .catch(function (err) { showErrorIn('#reset-error', err.message); })
+      .finally(done);
+  }
+
+  function handleResetEmail(event) {
+    event.preventDefault();
+    sendResetCode(false);
+  }
+
+  function handleResetCode(event) {
+    event.preventDefault();
+    clearError();
+    var done = busy('#reset-code-submit', '驗證中…');
+
+    PATS.rpc('verifyResetCode', { email: reset.email, code: $('#reset-code').value.trim() })
+      .then(function (result) {
+        reset.ticket = result.ticket;
+        resetStep(3);
+      })
+      .catch(function (err) {
+        showErrorIn('#reset-error', err.message);
+        // 驗證碼過期或試太多次，這組碼已被後端作廢，得重新申請。
+        if (err.code === 'RESET_CODE_EXPIRED' || err.code === 'RESET_TOO_MANY_ATTEMPTS') {
+          resetStep(1);
+        }
+      })
+      .finally(done);
+  }
+
+  function handleResetPassword(event) {
+    event.preventDefault();
+    clearError();
+
+    var password = $('#reset-new').value;
+    if (password !== $('#reset-confirm').value) {
+      return showErrorIn('#reset-error', PATS.describeError('PASSWORD_MISMATCH'));
+    }
+
+    var done = busy('#reset-password-submit', '更新中…');
+    PATS.rpc('resetPassword', { ticket: reset.ticket, newPassword: password })
+      .then(function (result) {
+        PATS.writeToken(result.token);
+        resetFlow();
+        PATS.toast('密碼已更新，已為你登入。', 'success');
+        PatsMain.enterApp(result.user);
+      })
+      .catch(function (err) {
+        showErrorIn('#reset-error', err.message);
+        if (err.code === 'RESET_TICKET_INVALID' || err.code === 'RESET_CODE_EXPIRED') {
+          resetStep(1);
+        }
+      })
+      .finally(done);
   }
 
   /* --------------------------------------------------------- Google 登入 */
@@ -216,9 +337,21 @@ var PatsAuth = (function () {
       });
     });
 
+    $('#reset-email-form').addEventListener('submit', handleResetEmail);
+    $('#reset-code-form').addEventListener('submit', handleResetCode);
+    $('#reset-password-form').addEventListener('submit', handleResetPassword);
+    $('#reset-resend').addEventListener('click', function () { sendResetCode(true); });
+
     $('#forgot-link').addEventListener('click', function (event) {
       event.preventDefault();
-      PATS.toast('請聯絡系統管理員協助重設密碼。');
+      // 已經打過的帳號如果是信箱，就順手帶進重設流程，少打一次。
+      var account = $('#login-account').value.trim();
+      switchPanel('reset');
+      if (account.indexOf('@') > 0) $('#reset-email').value = account;
+    });
+    $('#reset-back').addEventListener('click', function (event) {
+      event.preventDefault();
+      switchPanel('login');
     });
     $('#go-register').addEventListener('click', function (event) {
       event.preventDefault();

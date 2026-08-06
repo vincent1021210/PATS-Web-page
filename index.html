@@ -175,6 +175,94 @@
           已經有帳號了？ <a href="#" id="go-login">返回登入</a>
         </p>
       </div>
+
+      <!-- 忘記密碼 -------------------------------------------------- -->
+      <div id="reset-panel" class="hidden">
+        <div class="auth-mark"><span class="material-symbols-outlined">lock_reset</span></div>
+        <h2 class="auth-title">重設密碼</h2>
+        <p class="auth-sub" id="reset-sub">輸入你的電子郵件，我們會寄一組驗證碼給你</p>
+
+        <ol class="steps" id="reset-steps">
+          <li class="step is-active" data-step="1"><span>1</span>驗證信箱</li>
+          <li class="step" data-step="2"><span>2</span>輸入驗證碼</li>
+          <li class="step" data-step="3"><span>3</span>設定新密碼</li>
+        </ol>
+
+        <div id="reset-error" class="form-error hidden">
+          <span class="material-symbols-outlined">error</span>
+          <span data-role="text"></span>
+        </div>
+
+        <!-- 步驟一 -->
+        <form id="reset-email-form" class="auth-form">
+          <div class="field">
+            <label class="field-label" for="reset-email"><strong>電子郵件</strong></label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">mail</span>
+              <input id="reset-email" type="email" placeholder="name@gmail.com"
+                     autocomplete="email" required>
+            </div>
+          </div>
+          <button id="reset-email-submit" type="submit" class="btn btn-primary btn-block">
+            寄送驗證碼
+          </button>
+        </form>
+
+        <!-- 步驟二 -->
+        <form id="reset-code-form" class="auth-form hidden">
+          <div class="field">
+            <label class="field-label" for="reset-code">
+              <strong>驗證碼</strong>
+              <span class="field-note">6 位數字，15 分鐘內有效</span>
+            </label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">pin</span>
+              <input id="reset-code" type="text" inputmode="numeric" maxlength="6"
+                     class="code-input" placeholder="000000" autocomplete="one-time-code" required>
+            </div>
+          </div>
+          <button id="reset-code-submit" type="submit" class="btn btn-primary btn-block">
+            驗證
+          </button>
+          <button id="reset-resend" type="button" class="btn btn-ghost btn-block">
+            沒收到？重新寄送
+          </button>
+        </form>
+
+        <!-- 步驟三 -->
+        <form id="reset-password-form" class="auth-form hidden">
+          <div class="field">
+            <label class="field-label" for="reset-new">
+              <strong>新密碼</strong>
+              <span class="field-note">至少 8 個字元</span>
+            </label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">lock</span>
+              <input id="reset-new" type="password" placeholder="設定新密碼"
+                     autocomplete="new-password" required>
+              <button type="button" class="icon-btn" data-toggle-password="reset-new"
+                      aria-label="顯示密碼">
+                <span class="material-symbols-outlined">visibility_off</span>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="reset-confirm"><strong>確認新密碼</strong></label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">lock_reset</span>
+              <input id="reset-confirm" type="password" placeholder="再次輸入新密碼"
+                     autocomplete="new-password" required>
+            </div>
+          </div>
+          <button id="reset-password-submit" type="submit" class="btn btn-primary btn-block">
+            更新密碼並登入
+          </button>
+        </form>
+
+        <p class="auth-footer">
+          想起來了？ <a href="#" id="reset-back">返回登入</a>
+        </p>
+      </div>
       </div>
     </main>
   </section>

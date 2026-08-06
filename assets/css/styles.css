@@ -295,6 +295,55 @@ a:hover { text-decoration: underline; }
 
 .field-note { font-size: 11.5px; color: var(--ink-400); }
 
+/* 忘記密碼的三步驟指示器 */
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+}
+
+.step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--ink-400);
+  white-space: nowrap;
+}
+
+.step span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--surface-sunk);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.step.is-active { color: var(--ink-900); font-weight: 600; }
+.step.is-active span { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.step.is-done span { background: var(--brand-50); border-color: var(--brand-500); color: var(--brand-700); }
+
+@media (max-width: 380px) {
+  .step { font-size: 0; gap: 0; }
+  .step span { font-size: 11px; }
+}
+
+.code-input {
+  letter-spacing: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+}
+
 .form-error {
   display: flex; align-items: center; gap: 8px;
   padding: 9px 12px; border-radius: var(--r-md);

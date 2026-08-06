@@ -247,6 +247,197 @@ function authRegister_(payload) {
   };
 }
 
+/* --------------------------------------------------------- 忘記密碼 */
+
+var RESET_CODE_TTL_MS = 15 * 60 * 1000;  // 驗證碼有效 15 分鐘
+var RESET_MAX_ATTEMPTS = 5;              // 同一組驗證碼最多可以試 5 次
+var RESET_RESEND_COOLDOWN_MS = 60 * 1000;
+
+/**
+ * 六位數字驗證碼。用 UUID 當亂數來源，不用 Math.random（後者可預測）。
+ */
+function newResetCode_() {
+  var hex = Utilities.getUuid().replace(/-/g, '');
+  var code = '';
+  for (var i = 0; code.length < 6; i++) {
+    var d = parseInt(hex.charAt(i), 16);
+    if (d < 10) code += String(d);
+    if (i >= hex.length - 1) { hex = Utilities.getUuid().replace(/-/g, ''); i = -1; }
+  }
+  return code;
+}
+
+function purgeExpiredResets_() {
+  var now = Date.now();
+  dbFilter_('resets', function (r) {
+    return new Date(r.expiresAt).getTime() < now;
+  }).forEach(function (r) { dbDelete_('resets', r.id); });
+}
+
+/**
+ * 第一步：寄出驗證碼。
+ *
+ * 不論信箱是否存在都回報成功，否則這個匿名端點會變成
+ * 「這個信箱有沒有註冊過」的查詢工具。
+ */
+function authRequestReset_(payload) {
+  var email = String(payload.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('EMAIL_INVALID');
+
+  purgeExpiredResets_();
+
+  var user = findUserByAccount_(email);
+  if (user) {
+    var pending = dbFilter_('resets', function (r) { return r.userId === user.id; });
+
+    // 太頻繁的重送直接擋掉，避免有人拿這個端點狂寄信騷擾別人。
+    var fresh = pending.filter(function (r) {
+      return Date.now() - new Date(r.createdAt).getTime() < RESET_RESEND_COOLDOWN_MS;
+    });
+    if (fresh.length) throw new Error('RESET_TOO_SOON');
+
+    // 一個帳號同時只留一組有效驗證碼
+    pending.forEach(function (r) { dbDelete_('resets', r.id); });
+
+    var code = newResetCode_();
+    var salt = newSalt_();
+    dbInsert_('resets', {
+      id: newId_(),
+      userId: user.id,
+      email: user.email,
+      codeHash: hashPassword_(code, salt),
+      codeSalt: salt,
+      createdAt: nowIso_(),
+      expiresAt: new Date(Date.now() + RESET_CODE_TTL_MS).toISOString(),
+      attempts: 0,
+      ticket: ''
+    });
+
+    sendResetCodeMail_(user, code);
+  }
+
+  return { sent: true };
+}
+
+function sendResetCodeMail_(user, code) {
+  var name = user.displayName || user.username || user.email;
+  var minutes = Math.round(RESET_CODE_TTL_MS / 60000);
+
+  MailApp.sendEmail({
+    to: user.email,
+    subject: 'PATS 密碼重設驗證碼：' + code,
+    body: [
+      name + ' 你好，',
+      '',
+      '你的 PATS 密碼重設驗證碼是：' + code,
+      '',
+      '請在 ' + minutes + ' 分鐘內回到 PATS 輸入這組驗證碼。',
+      '如果這不是你本人的操作，請忽略這封信，你的密碼不會有任何變動。',
+      '',
+      '— PATS'
+    ].join('\n'),
+    htmlBody: [
+      '<div style="font-family:system-ui,-apple-system,\'Noto Sans TC\',sans-serif;',
+      'max-width:440px;color:#1f2937;line-height:1.7">',
+      '<p>' + escapeHtml_(name) + ' 你好，</p>',
+      '<p>你的 PATS 密碼重設驗證碼是：</p>',
+      '<p style="font-size:30px;font-weight:700;letter-spacing:8px;color:#2563eb;',
+      'background:#eff6ff;padding:14px 18px;border-radius:10px;text-align:center;',
+      'margin:18px 0">' + code + '</p>',
+      '<p>請在 <strong>' + minutes + ' 分鐘</strong>內回到 PATS 輸入這組驗證碼。</p>',
+      '<p style="color:#6b7280;font-size:13px">',
+      '如果這不是你本人的操作，請忽略這封信，你的密碼不會有任何變動。</p>',
+      '<p style="color:#6b7280;font-size:13px">— PATS</p>',
+      '</div>'
+    ].join('')
+  });
+}
+
+function escapeHtml_(text) {
+  return String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * 第二步：核對驗證碼，換一張只能用一次的通行證（ticket）。
+ *
+ * 這樣第三步就不必再把驗證碼傳一次，也能確保「改密碼」這個動作
+ * 一定經過驗證碼這關。
+ */
+function authVerifyResetCode_(payload) {
+  var email = String(payload.email || '').trim().toLowerCase();
+  var code = String(payload.code || '').trim();
+
+  var record = dbFind_('resets', function (r) {
+    return String(r.email).toLowerCase() === email;
+  });
+  if (!record) throw new Error('RESET_CODE_INVALID');
+
+  if (new Date(record.expiresAt).getTime() < Date.now()) {
+    dbDelete_('resets', record.id);
+    throw new Error('RESET_CODE_EXPIRED');
+  }
+
+  if (!safeEqual_(hashPassword_(code, record.codeSalt), record.codeHash)) {
+    var attempts = Number(record.attempts) + 1;
+    // 一到上限就當場銷毀，不留到下一次呼叫才處理。
+    if (attempts >= RESET_MAX_ATTEMPTS) {
+      dbDelete_('resets', record.id);
+      throw new Error('RESET_TOO_MANY_ATTEMPTS');
+    }
+    dbUpdate_('resets', record.id, { attempts: attempts });
+    throw new Error('RESET_CODE_INVALID');
+  }
+
+  var ticket = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
+  dbUpdate_('resets', record.id, { ticket: ticket });
+  return { ticket: ticket };
+}
+
+/**
+ * 第三步：設定新密碼。
+ *
+ * 成功後除了換掉密碼，也會把該帳號所有既有的工作階段清掉——
+ * 會走到重設密碼流程，通常代表帳號可能已經不安全了。
+ */
+function authResetPassword_(payload) {
+  var ticket = String(payload.ticket || '');
+  if (!ticket) throw new Error('RESET_TICKET_INVALID');
+
+  var record = dbFind_('resets', function (r) {
+    return r.ticket && String(r.ticket) === ticket;
+  });
+  if (!record) throw new Error('RESET_TICKET_INVALID');
+
+  if (new Date(record.expiresAt).getTime() < Date.now()) {
+    dbDelete_('resets', record.id);
+    throw new Error('RESET_CODE_EXPIRED');
+  }
+
+  var password = String(payload.newPassword || '');
+  if (password.length < 8) throw new Error('WEAK_PASSWORD');
+
+  var user = dbGet_('users', record.userId);
+  if (!user) throw new Error('RESET_TICKET_INVALID');
+
+  var salt = newSalt_();
+  dbUpdate_('users', user.id, {
+    passwordHash: hashPassword_(password, salt),
+    passwordSalt: salt
+  });
+
+  dbFilter_('sessions', function (s) { return s.userId === user.id; })
+    .forEach(function (s) { dbDelete_('sessions', s.token); });
+
+  dbDelete_('resets', record.id);
+
+  return {
+    token: createSession_(user.id, false),
+    user: publicUser_(user)
+  };
+}
+
 function authChangePassword_(user, payload) {
   if (user.passwordHash) {
     var current = hashPassword_(payload.currentPassword, user.passwordSalt);

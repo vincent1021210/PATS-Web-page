@@ -18,6 +18,10 @@ var SCHEMA = {
     'settings', 'createdAt', 'lastSeenAt'
   ],
   sessions: ['token', 'userId', 'createdAt', 'expiresAt', 'userAgent'],
+  resets: [
+    'id', 'userId', 'email', 'codeHash', 'codeSalt',
+    'createdAt', 'expiresAt', 'attempts', 'ticket'
+  ],
   contacts: ['id', 'userId', 'peerId', 'status', 'createdAt'],
   conversations: ['id', 'type', 'name', 'avatarUrl', 'createdBy', 'createdAt', 'lastMessageAt'],
   participants: ['id', 'conversationId', 'userId', 'role', 'joinedAt', 'lastReadAt', 'archived', 'archivedAt'],
