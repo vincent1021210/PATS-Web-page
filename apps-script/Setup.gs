@@ -17,7 +17,7 @@ function initializeProject() {
     '資料庫試算表：' + url,
     '目前使用者人數：' + userCount,
     'Google 用戶端 ID：' + (googleClientId_() || '（尚未設定，僅開放帳密登入）'),
-    '驗證碼寄件者：' + Session.getEffectiveUser().getEmail(),
+    // 這行讀得到數字，就代表寄信權限已經授權完成（驗證碼會以授權者的帳號寄出）。
     '今日還可寄出的信件數：' + MailApp.getRemainingDailyQuota()
   ];
 
