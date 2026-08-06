@@ -14,7 +14,7 @@ var PATS_CONFIG = {
    *
    * 範例：'https://script.google.com/macros/s/AKfycb.../exec'
    */
-  apiUrl: '',
+  apiUrl: 'https://script.google.com/macros/s/AKfycbzNkhCXzywXo6dxazgRCmB2JnEkLqV2XMVAlP0umwQpLZ6WrD6RcIYCqAjrj9sxFCW33Q/exec',
 
   /**
    * Google 用戶端 ID（選填）。
