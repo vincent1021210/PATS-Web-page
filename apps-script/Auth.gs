@@ -264,7 +264,12 @@ function uniqueUsername_(base) {
   return candidate;
 }
 
-function authRegister_(payload) {
+var SIGNUP_CODE_TTL_MS = 15 * 60 * 1000;
+var SIGNUP_MAX_ATTEMPTS = 5;
+var SIGNUP_RESEND_COOLDOWN_MS = 60 * 1000;
+
+/** 註冊資料的共同檢查，寄驗證碼與真正建立帳號兩段都會用到。 */
+function validateSignup_(payload) {
   var code = registrationCode_();
   if (code) {
     var provided = String(payload.inviteCode || '').trim();
@@ -280,6 +285,137 @@ function authRegister_(payload) {
   if (ROLES[role].domains.indexOf(emailDomain_(email)) < 0) {
     throw new Error('EMAIL_DOMAIN_MISMATCH');
   }
+  if (findUserByAccount_(email)) throw new Error('EMAIL_TAKEN');
+
+  var displayName = String(payload.displayName || '').trim();
+  if (displayName.length < 2) throw new Error('USERNAME_TOO_SHORT');
+  if (displayName.length > 40) throw new Error('USERNAME_TOO_LONG');
+
+  // 家長必須掛在一個已註冊的學生底下，否則不知道要看誰的紀錄。
+  var studentId = '';
+  if (role === 'parent') {
+    var account = String(payload.studentAccount || '').trim();
+    if (!account) throw new Error('STUDENT_ACCOUNT_REQUIRED');
+    var student = findUserByAccount_(account);
+    if (!student) throw new Error('STUDENT_NOT_FOUND');
+    if (roleOf_(student) !== 'student') throw new Error('NOT_A_STUDENT');
+    studentId = student.id;
+  }
+
+  return { role: role, email: email, displayName: displayName, studentId: studentId };
+}
+
+function purgeExpiredSignups_() {
+  var now = Date.now();
+  dbFilter_('signups', function (s) {
+    return new Date(s.expiresAt).getTime() < now;
+  }).forEach(function (s) { dbDelete_('signups', s.id); });
+}
+
+/**
+ * 註冊第一步：寄驗證碼到使用者填的信箱。
+ *
+ * 這一步不建立任何帳號，只確認「這個信箱真的是他本人的」。
+ * 密碼刻意不在這裡收，避免尚未驗證的密碼被存進資料庫。
+ */
+function authRequestSignupCode_(payload) {
+  var info = validateSignup_(payload);
+  purgeExpiredSignups_();
+
+  var pending = dbFilter_('signups', function (s) {
+    return String(s.email).toLowerCase() === info.email;
+  });
+
+  var fresh = pending.filter(function (s) {
+    return Date.now() - new Date(s.createdAt).getTime() < SIGNUP_RESEND_COOLDOWN_MS;
+  });
+  if (fresh.length) throw new Error('SIGNUP_TOO_SOON');
+
+  // 同一個信箱同時只留一組有效驗證碼
+  pending.forEach(function (s) { dbDelete_('signups', s.id); });
+
+  var code = newResetCode_();
+  var salt = newSalt_();
+  dbInsert_('signups', {
+    id: newId_(),
+    email: info.email,
+    role: info.role,
+    studentId: info.studentId,
+    codeHash: hashPassword_(code, salt),
+    codeSalt: salt,
+    createdAt: nowIso_(),
+    expiresAt: new Date(Date.now() + SIGNUP_CODE_TTL_MS).toISOString(),
+    attempts: 0
+  });
+
+  sendSignupCodeMail_(info, code);
+  return { sent: true, email: info.email };
+}
+
+function sendSignupCodeMail_(info, code) {
+  var minutes = Math.round(SIGNUP_CODE_TTL_MS / 60000);
+  var roleLabel = ROLES[info.role].label;
+
+  MailApp.sendEmail({
+    to: info.email,
+    subject: 'PATS 註冊驗證碼：' + code,
+    body: [
+      info.displayName + ' 你好，',
+      '',
+      '你正在以「' + roleLabel + '」身分註冊 PATS。',
+      '你的驗證碼是：' + code,
+      '',
+      '請在 ' + minutes + ' 分鐘內回到 PATS 輸入這組驗證碼，帳號才會建立。',
+      '如果這不是你本人的操作，請忽略這封信，不會有任何帳號被建立。',
+      '',
+      '— PATS'
+    ].join('\n'),
+    htmlBody: [
+      '<div style="font-family:system-ui,-apple-system,\'Noto Sans TC\',sans-serif;',
+      'max-width:440px;color:#1f2937;line-height:1.7">',
+      '<p>' + escapeHtml_(info.displayName) + ' 你好，</p>',
+      '<p>你正在以「<strong>' + roleLabel + '</strong>」身分註冊 PATS。你的驗證碼是：</p>',
+      '<p style="font-size:30px;font-weight:700;letter-spacing:8px;color:#2563eb;',
+      'background:#eff6ff;padding:14px 18px;border-radius:10px;text-align:center;',
+      'margin:18px 0">' + code + '</p>',
+      '<p>請在 <strong>' + minutes + ' 分鐘</strong>內回到 PATS 輸入這組驗證碼，帳號才會建立。</p>',
+      '<p style="color:#6b7280;font-size:13px">',
+      '如果這不是你本人的操作，請忽略這封信，不會有任何帳號被建立。</p>',
+      '<p style="color:#6b7280;font-size:13px">— PATS</p>',
+      '</div>'
+    ].join('')
+  });
+}
+
+/**
+ * 註冊第二步：核對驗證碼並真正建立帳號。
+ *
+ * 身分與綁定的學生一律取自第一步存下來的紀錄，不採用這一步送來的值，
+ * 避免有人用學生信箱收驗證碼、卻把自己註冊成老師。
+ */
+function authRegister_(payload) {
+  var email = String(payload.email || '').trim().toLowerCase();
+  var code = String(payload.code || '').trim();
+
+  var pending = dbFind_('signups', function (s) {
+    return String(s.email).toLowerCase() === email;
+  });
+  if (!pending) throw new Error('SIGNUP_NOT_REQUESTED');
+
+  if (new Date(pending.expiresAt).getTime() < Date.now()) {
+    dbDelete_('signups', pending.id);
+    throw new Error('SIGNUP_CODE_EXPIRED');
+  }
+
+  if (!safeEqual_(hashPassword_(code, pending.codeSalt), pending.codeHash)) {
+    var attempts = Number(pending.attempts) + 1;
+    if (attempts >= SIGNUP_MAX_ATTEMPTS) {
+      dbDelete_('signups', pending.id);
+      throw new Error('SIGNUP_TOO_MANY_ATTEMPTS');
+    }
+    dbUpdate_('signups', pending.id, { attempts: attempts });
+    throw new Error('SIGNUP_CODE_INVALID');
+  }
 
   var displayName = String(payload.displayName || '').trim();
   if (displayName.length < 2) throw new Error('USERNAME_TOO_SHORT');
@@ -288,27 +424,18 @@ function authRegister_(payload) {
   var password = String(payload.password || '');
   if (password.length < 8) throw new Error('WEAK_PASSWORD');
 
-  // 家長必須掛在一個已註冊的學生底下，否則不知道要看誰的紀錄。
-  var linkedStudentId = '';
-  if (role === 'parent') {
-    var account = String(payload.studentAccount || '').trim();
-    if (!account) throw new Error('STUDENT_ACCOUNT_REQUIRED');
-    var student = findUserByAccount_(account);
-    if (!student) throw new Error('STUDENT_NOT_FOUND');
-    if (roleOf_(student) !== 'student') throw new Error('NOT_A_STUDENT');
-    linkedStudentId = student.id;
-  }
-
-  // createUser_ 會在信箱重複時丟出 EMAIL_TAKEN
+  // createUser_ 會在信箱重複時丟出 EMAIL_TAKEN（例如同時有兩個人在註冊）
   var user = createUser_({
     email: email,
     username: uniqueUsername_(email.split('@')[0]),
     displayName: displayName,
     password: password,
     provider: 'password',
-    role: role,
-    linkedStudentId: linkedStudentId
+    role: pending.role,
+    linkedStudentId: pending.studentId
   });
+
+  dbDelete_('signups', pending.id);
 
   return {
     token: createSession_(user.id, !!payload.remember),

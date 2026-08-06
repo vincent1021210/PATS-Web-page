@@ -22,6 +22,10 @@ var SCHEMA = {
     'id', 'userId', 'email', 'codeHash', 'codeSalt',
     'createdAt', 'expiresAt', 'attempts', 'ticket'
   ],
+  signups: [
+    'id', 'email', 'role', 'studentId', 'codeHash', 'codeSalt',
+    'createdAt', 'expiresAt', 'attempts'
+  ],
   contacts: ['id', 'userId', 'peerId', 'status', 'createdAt'],
   conversations: ['id', 'type', 'name', 'avatarUrl', 'createdBy', 'createdAt', 'lastMessageAt'],
   participants: ['id', 'conversationId', 'userId', 'role', 'joinedAt', 'lastReadAt', 'archived', 'archivedAt'],

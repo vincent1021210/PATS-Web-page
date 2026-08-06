@@ -61,6 +61,7 @@ function publicActions_() {
       };
     },
     login: function (payload) { return authLogin_(payload); },
+    requestSignupCode: function (payload) { return authRequestSignupCode_(payload); },
     register: function (payload) { return authRegister_(payload); },
     requestReset: function (payload) { return authRequestReset_(payload); },
     verifyResetCode: function (payload) { return authVerifyResetCode_(payload); },

@@ -106,13 +106,19 @@
       <div id="register-panel" class="hidden">
         <div class="auth-mark"><span class="material-symbols-outlined">person_add</span></div>
         <h2 class="auth-title">建立帳號</h2>
-        <p class="auth-sub">填寫以下資料即可開始使用 PATS</p>
+        <p class="auth-sub" id="register-sub">填寫以下資料，我們會寄驗證碼確認你的信箱</p>
+
+        <ol class="steps" id="register-steps">
+          <li class="step is-active" data-step="1"><span>1</span>填寫資料</li>
+          <li class="step" data-step="2"><span>2</span>驗證信箱</li>
+        </ol>
+
+        <div id="register-error" class="form-error hidden">
+          <span class="material-symbols-outlined">error</span>
+          <span data-role="text"></span>
+        </div>
 
         <form id="register-form" class="auth-form" autocomplete="on">
-          <div id="register-error" class="form-error hidden">
-            <span class="material-symbols-outlined">error</span>
-            <span data-role="text"></span>
-          </div>
 
           <div class="field">
             <span class="field-label"><strong>身分</strong></span>
@@ -206,7 +212,31 @@
           </div>
 
           <button id="register-submit" type="submit" class="btn btn-primary btn-block">
-            建立帳號
+            寄送驗證碼
+          </button>
+        </form>
+
+        <!-- 步驟二：輸入信中的驗證碼 -->
+        <form id="register-verify-form" class="auth-form hidden">
+          <div class="field">
+            <label class="field-label" for="register-code">
+              <strong>驗證碼</strong>
+              <span class="field-note">6 位數字，15 分鐘內有效</span>
+            </label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">pin</span>
+              <input id="register-code" type="text" inputmode="numeric" maxlength="6"
+                     class="code-input" placeholder="000000" autocomplete="one-time-code" required>
+            </div>
+          </div>
+          <button id="register-verify-submit" type="submit" class="btn btn-primary btn-block">
+            完成註冊
+          </button>
+          <button id="register-resend" type="button" class="btn btn-ghost btn-block">
+            沒收到？重新寄送
+          </button>
+          <button id="register-back" type="button" class="btn btn-quiet btn-block">
+            上一步，修改資料
           </button>
         </form>
 

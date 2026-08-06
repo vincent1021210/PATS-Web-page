@@ -133,11 +133,14 @@ var PatsAuth = (function () {
    */
   function resetRegisterForm() {
     ['#register-name', '#register-local', '#register-student',
-      '#register-password', '#register-confirm', '#register-invite'].forEach(function (s) {
+      '#register-password', '#register-confirm', '#register-invite',
+      '#register-code'].forEach(function (s) {
       $(s).value = '';
     });
     $('#invite-field').classList.add('hidden');
+    signup = null;
     selectRole('student');
+    registerStep(1);
   }
 
   function registerEmail() {
@@ -148,39 +151,59 @@ var PatsAuth = (function () {
     return local ? local + '@' + domain : '';
   }
 
-  function handleRegister(event) {
-    event.preventDefault();
+  /* 第一步填好的資料，等信箱驗證通過後才送去建立帳號。密碼只放在記憶體。 */
+  var signup = null;
+
+  function registerStep(step) {
+    $('#register-form').classList.toggle('hidden', step !== 1);
+    $('#register-verify-form').classList.toggle('hidden', step !== 2);
+
+    PATS.$$('#register-steps .step').forEach(function (li) {
+      var n = Number(li.getAttribute('data-step'));
+      li.classList.toggle('is-active', n === step);
+      li.classList.toggle('is-done', n < step);
+    });
+
+    $('#register-sub').textContent = step === 2 && signup
+      ? '驗證碼已寄到 ' + signup.email + '，請查看收件匣'
+      : '填寫以下資料，我們會寄驗證碼確認你的信箱';
+
+    var focus = step === 2 ? '#register-code' : '#register-name';
+    if ($(focus)) $(focus).focus();
+  }
+
+  /** 第一步：驗證資料並請後端寄出驗證碼。 */
+  function sendSignupCode(isResend) {
     clearError();
 
-    var name = $('#register-name').value.trim();
-    var email = registerEmail();
     var password = $('#register-password').value;
-    var confirm = $('#register-confirm').value;
-    var invite = $('#register-invite').value.trim();
-
-    if (password !== confirm) {
-      return showErrorIn('#register-error', PATS.describeError('PASSWORD_MISMATCH'));
+    if (!isResend && password !== $('#register-confirm').value) {
+      showErrorIn('#register-error', PATS.describeError('PASSWORD_MISMATCH'));
+      return Promise.resolve();
     }
 
-    var button = $('#register-submit');
-    button.disabled = true;
-    button.textContent = '建立中…';
-
-    PATS.rpc('register', {
+    var draft = {
       role: registerRole,
-      displayName: name,
-      email: email,
+      displayName: $('#register-name').value.trim(),
+      email: registerEmail(),
       studentAccount: $('#register-student').value.trim(),
-      password: password,
-      inviteCode: invite,
-      remember: true
+      inviteCode: $('#register-invite').value.trim(),
+      password: password
+    };
+
+    var done = busy(isResend ? '#register-resend' : '#register-submit', '寄送中…');
+
+    return PATS.rpc('requestSignupCode', {
+      role: draft.role,
+      displayName: draft.displayName,
+      email: draft.email,
+      studentAccount: draft.studentAccount,
+      inviteCode: draft.inviteCode
     })
-      .then(function (result) {
-        PATS.writeToken(result.token);
-        $('#register-password').value = '';
-        $('#register-confirm').value = '';
-        PATS.toast('帳號建立完成，歡迎加入 PATS。', 'success');
-        PatsMain.enterApp(result.user);
+      .then(function () {
+        signup = draft;
+        if (isResend) PATS.toast('驗證碼已重新寄出。', 'success');
+        else registerStep(2);
       })
       .catch(function (err) {
         // 後端啟用邀請碼時才把欄位顯示出來，一般情況不打擾使用者。
@@ -190,10 +213,46 @@ var PatsAuth = (function () {
         }
         showErrorIn('#register-error', err.message);
       })
-      .finally(function () {
-        button.disabled = false;
-        button.textContent = '建立帳號';
-      });
+      .finally(done);
+  }
+
+  function handleRegister(event) {
+    event.preventDefault();
+    sendSignupCode(false);
+  }
+
+  /** 第二步：送出驗證碼，通過就建立帳號並直接登入。 */
+  function handleRegisterVerify(event) {
+    event.preventDefault();
+    clearError();
+    if (!signup) return registerStep(1);
+
+    var done = busy('#register-verify-submit', '建立中…');
+
+    PATS.rpc('register', {
+      email: signup.email,
+      code: $('#register-code').value.trim(),
+      displayName: signup.displayName,
+      password: signup.password,
+      remember: true
+    })
+      .then(function (result) {
+        PATS.writeToken(result.token);
+        signup = null;
+        resetRegisterForm();
+        PATS.toast('帳號建立完成，歡迎加入 PATS。', 'success');
+        PatsMain.enterApp(result.user);
+      })
+      .catch(function (err) {
+        showErrorIn('#register-error', err.message);
+        // 這幾種情況該組驗證碼已經作廢，得重新填一次資料再寄一次。
+        if (err.code === 'SIGNUP_CODE_EXPIRED' ||
+            err.code === 'SIGNUP_TOO_MANY_ATTEMPTS' ||
+            err.code === 'SIGNUP_NOT_REQUESTED') {
+          registerStep(1);
+        }
+      })
+      .finally(done);
   }
 
   /* ------------------------------------------------------------ 忘記密碼 */
@@ -390,6 +449,12 @@ var PatsAuth = (function () {
   function init() {
     $('#login-form').addEventListener('submit', handleSubmit);
     $('#register-form').addEventListener('submit', handleRegister);
+    $('#register-verify-form').addEventListener('submit', handleRegisterVerify);
+    $('#register-resend').addEventListener('click', function () { sendSignupCode(true); });
+    $('#register-back').addEventListener('click', function () {
+      clearError();
+      registerStep(1);
+    });
     PATS.$$('#role-group .role-btn').forEach(function (button) {
       button.addEventListener('click', function () {
         selectRole(button.getAttribute('data-role'));
