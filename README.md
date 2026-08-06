@@ -14,18 +14,17 @@
 ## 專案結構
 
 ```
-web/                      ← 部署到 GitHub Pages 的靜態網站
-├── index.html
-├── .nojekyll             （避免 GitHub Pages 用 Jekyll 處理檔案）
-└── assets/
-    ├── css/styles.css    設計系統與 RWD
-    └── js/
-        ├── config.js     ★ 唯一需要你手動修改的檔案
-        ├── core.js       狀態、rpc()、共用 UI（toast / modal / menu）
-        ├── auth.js       註冊、帳密登入、Google 登入、登出
-        ├── chat.js       對話列表與訊息畫面
-        ├── settings.js   設定區三個子畫面
-        └── main.js       啟動流程與畫面切換
+index.html                ← 網站入口，就放在 repo 根目錄
+.nojekyll                 （避免 GitHub Pages 用 Jekyll 處理檔案）
+assets/
+├── css/styles.css        設計系統與 RWD
+└── js/
+    ├── config.js         ★ 唯一需要你手動修改的檔案
+    ├── core.js           狀態、rpc()、共用 UI（toast / modal / menu）
+    ├── auth.js           註冊、帳密登入、Google 登入、登出
+    ├── chat.js           對話列表與訊息畫面
+    ├── settings.js       設定區三個子畫面
+    └── main.js           啟動流程與畫面切換
 
 apps-script/              ← 部署成 Apps Script 網頁應用程式（API）
 ├── appsscript.json       資訊清單：執行身分、權限範圍
@@ -115,7 +114,7 @@ clasp push
 
 ### 第三步 — 設定並發佈前端
 
-編輯 `web/assets/js/config.js`：
+編輯 `assets/js/config.js`：
 
 ```js
 var PATS_CONFIG = {
@@ -135,17 +134,16 @@ git remote add origin https://github.com/<你的帳號>/<repo>.git
 git push -u origin main
 ```
 
-到 GitHub repo →「Settings」→「Pages」→ Source 選 **GitHub Actions**。
-`.github/workflows/deploy-pages.yml` 會自動把 `web/` 發佈出去，
-網址是 `https://<你的帳號>.github.io/<repo>/`。
+網站檔案就放在 repo 根目錄，所以 Pages 的 Source 設成
+**GitHub Actions** 或 **Deploy from a branch（main / root）** 都可以，
+兩種都會讓 `https://<你的帳號>.github.io/<repo>/` 直接是登入頁。
 
-> 若你偏好不用 Actions，也可以在 Pages 設定選「Deploy from a branch」，
-> 但 GitHub 只允許根目錄或 `/docs`，那就要把 `web/` 改名成 `docs/`。
+推上 `main` 後等一兩分鐘，記得用 `Ctrl + F5` 強制重新整理，
+否則瀏覽器可能還拿著舊版的 HTML。
 
 ### 本機預覽
 
 ```bash
-cd web
 python -m http.server 8080
 # 開 http://localhost:8080
 ```

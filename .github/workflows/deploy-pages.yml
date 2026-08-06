@@ -26,10 +26,11 @@ jobs:
 
       - uses: actions/configure-pages@v5
 
-      # 只發佈 web/ 內的靜態檔案，apps-script/ 屬於後端不需要上線。
+      # 網站放在 repo 根目錄，這樣不論 Pages 來源設成「從分支發佈」
+      # 或「GitHub Actions」，根網址都會是登入頁。
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: web
+          path: .
 
       - id: deployment
         uses: actions/deploy-pages@v4
