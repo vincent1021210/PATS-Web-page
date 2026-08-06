@@ -86,18 +86,66 @@ function purgeExpiredSessions() {
     .forEach(function (s) { dbDelete_('sessions', s.token); });
 }
 
+/* ------------------------------------------------------------------ 身分 */
+
+/**
+ * 三種身分與各自允許的信箱網域。註冊時只認這些網域，
+ * 所以身分不是使用者自己說了算，而是由學校配發的信箱決定。
+ */
+var ROLES = {
+  student: { label: '學生', domains: ['smail.hc.edu.tw'] },
+  teacher: { label: '老師', domains: ['lsps.hc.edu.tw', 'tmail.hc.edu.tw'] },
+  parent: { label: '家長', domains: ['gmail.com'] }
+};
+
+function emailDomain_(email) {
+  return String(email || '').trim().toLowerCase().split('@')[1] || '';
+}
+
+/** 由信箱網域反推身分，認不出來時回傳空字串。 */
+function roleOfEmail_(email) {
+  var domain = emailDomain_(email);
+  var found = '';
+  Object.keys(ROLES).forEach(function (role) {
+    if (!found && ROLES[role].domains.indexOf(domain) >= 0) found = role;
+  });
+  return found;
+}
+
+/** 舊資料沒有 role 欄位，用信箱推回去，再不行就當學生。 */
+function roleOf_(user) {
+  return String(user.role || '') || roleOfEmail_(user.email) || 'student';
+}
+
 /* -------------------------------------------------------------- 使用者 */
 
 function publicUser_(user) {
-  return {
+  var role = roleOf_(user);
+  var out = {
     id: user.id,
     email: user.email,
     username: user.username,
     displayName: user.displayName || user.username || user.email,
     avatarUrl: user.avatarUrl || '',
     provider: user.provider || 'password',
+    role: role,
+    roleLabel: ROLES[role] ? ROLES[role].label : role,
+    canChat: role !== 'parent',
+    linkedStudent: null,
     settings: Object.assign({}, DEFAULT_USER_SETTINGS, parseJson_(user.settings, {}))
   };
+
+  if (role === 'parent' && user.linkedStudentId) {
+    var student = dbGet_('users', user.linkedStudentId);
+    if (student) {
+      out.linkedStudent = {
+        id: student.id,
+        name: student.displayName || student.username,
+        email: student.email
+      };
+    }
+  }
+  return out;
 }
 
 function findUserByAccount_(account) {
@@ -127,7 +175,9 @@ function createUser_(fields) {
     status: 'active',
     settings: JSON.stringify(DEFAULT_USER_SETTINGS),
     createdAt: nowIso_(),
-    lastSeenAt: nowIso_()
+    lastSeenAt: nowIso_(),
+    role: fields.role || roleOfEmail_(email) || 'student',
+    linkedStudentId: fields.linkedStudentId || ''
   });
 }
 
@@ -222,8 +272,14 @@ function authRegister_(payload) {
     if (!safeEqual_(provided, code)) throw new Error('INVITE_CODE_INVALID');
   }
 
+  var role = String(payload.role || '').trim();
+  if (!ROLES[role]) throw new Error('ROLE_REQUIRED');
+
   var email = String(payload.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('EMAIL_INVALID');
+  if (ROLES[role].domains.indexOf(emailDomain_(email)) < 0) {
+    throw new Error('EMAIL_DOMAIN_MISMATCH');
+  }
 
   var displayName = String(payload.displayName || '').trim();
   if (displayName.length < 2) throw new Error('USERNAME_TOO_SHORT');
@@ -232,13 +288,26 @@ function authRegister_(payload) {
   var password = String(payload.password || '');
   if (password.length < 8) throw new Error('WEAK_PASSWORD');
 
+  // 家長必須掛在一個已註冊的學生底下，否則不知道要看誰的紀錄。
+  var linkedStudentId = '';
+  if (role === 'parent') {
+    var account = String(payload.studentAccount || '').trim();
+    if (!account) throw new Error('STUDENT_ACCOUNT_REQUIRED');
+    var student = findUserByAccount_(account);
+    if (!student) throw new Error('STUDENT_NOT_FOUND');
+    if (roleOf_(student) !== 'student') throw new Error('NOT_A_STUDENT');
+    linkedStudentId = student.id;
+  }
+
   // createUser_ 會在信箱重複時丟出 EMAIL_TAKEN
   var user = createUser_({
     email: email,
     username: uniqueUsername_(email.split('@')[0]),
     displayName: displayName,
     password: password,
-    provider: 'password'
+    provider: 'password',
+    role: role,
+    linkedStudentId: linkedStudentId
   });
 
   return {
@@ -492,12 +561,18 @@ function authGoogleLogin_(payload) {
   var email = String(claims.email).toLowerCase();
   var user = findUserByAccount_(email);
   if (!user) {
+    // 家長帳號一定要綁學生，沒辦法只憑 Google 登入就建立。
+    var role = roleOfEmail_(email);
+    if (!role) throw new Error('EMAIL_DOMAIN_MISMATCH');
+    if (role === 'parent') throw new Error('PARENT_MUST_REGISTER');
+
     user = createUser_({
       email: email,
       username: claims.name || email.split('@')[0],
       displayName: claims.name || email.split('@')[0],
       avatarUrl: claims.picture || '',
-      provider: 'google'
+      provider: 'google',
+      role: role
     });
   } else if (claims.picture && !user.avatarUrl) {
     dbUpdate_('users', user.id, { avatarUrl: claims.picture });

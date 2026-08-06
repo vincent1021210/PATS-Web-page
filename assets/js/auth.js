@@ -85,12 +85,75 @@ var PatsAuth = (function () {
     if (focus) focus.focus();
   }
 
+  /* 三種身分各自的信箱網域與說明，必須和後端 Auth.gs 的 ROLES 一致。 */
+  var ROLES = {
+    student: {
+      domains: ['smail.hc.edu.tw'],
+      hint: '請使用學校配發的 @smail.hc.edu.tw 信箱'
+    },
+    teacher: {
+      domains: ['lsps.hc.edu.tw', 'tmail.hc.edu.tw'],
+      hint: '請使用 @lsps.hc.edu.tw 或 @tmail.hc.edu.tw 信箱'
+    },
+    parent: {
+      domains: ['gmail.com'],
+      hint: '請使用 Gmail 信箱，並填寫孩子已註冊的學生帳號。' +
+            '家長帳號只會收到孩子的違規與舉報通知，不能使用聊天功能。'
+    }
+  };
+
+  var registerRole = 'student';
+
+  function selectRole(role) {
+    registerRole = role;
+    clearError();
+
+    PATS.$$('#role-group .role-btn').forEach(function (button) {
+      var active = button.getAttribute('data-role') === role;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-checked', active ? 'true' : 'false');
+    });
+
+    $('#role-hint').textContent = ROLES[role].hint;
+    $('#student-field').classList.toggle('hidden', role !== 'parent');
+    $('#register-student').required = role === 'parent';
+
+    // 老師有兩個網域可選，其餘身分只有一個，直接顯示成固定文字。
+    var multi = ROLES[role].domains.length > 1;
+    $('#register-domain').classList.toggle('hidden', multi);
+    $('#register-domain-select').classList.toggle('hidden', !multi);
+    $('#register-domain').textContent = '@' + ROLES[role].domains[0];
+  }
+
+  /**
+   * 把註冊表單清成初始狀態。
+   *
+   * 只在回到「乾淨的登入畫面」時呼叫（首次載入、登出），不在使用者
+   * 於登入／註冊之間來回切換時清除，免得打到一半的資料被吃掉。
+   */
+  function resetRegisterForm() {
+    ['#register-name', '#register-local', '#register-student',
+      '#register-password', '#register-confirm', '#register-invite'].forEach(function (s) {
+      $(s).value = '';
+    });
+    $('#invite-field').classList.add('hidden');
+    selectRole('student');
+  }
+
+  function registerEmail() {
+    var local = $('#register-local').value.trim().replace(/^@+/, '');
+    var domain = ROLES[registerRole].domains.length > 1
+      ? $('#register-domain-select').value
+      : ROLES[registerRole].domains[0];
+    return local ? local + '@' + domain : '';
+  }
+
   function handleRegister(event) {
     event.preventDefault();
     clearError();
 
     var name = $('#register-name').value.trim();
-    var email = $('#register-email').value.trim();
+    var email = registerEmail();
     var password = $('#register-password').value;
     var confirm = $('#register-confirm').value;
     var invite = $('#register-invite').value.trim();
@@ -104,8 +167,10 @@ var PatsAuth = (function () {
     button.textContent = '建立中…';
 
     PATS.rpc('register', {
+      role: registerRole,
       displayName: name,
       email: email,
+      studentAccount: $('#register-student').value.trim(),
       password: password,
       inviteCode: invite,
       remember: true
@@ -325,6 +390,11 @@ var PatsAuth = (function () {
   function init() {
     $('#login-form').addEventListener('submit', handleSubmit);
     $('#register-form').addEventListener('submit', handleRegister);
+    PATS.$$('#role-group .role-btn').forEach(function (button) {
+      button.addEventListener('click', function () {
+        selectRole(button.getAttribute('data-role'));
+      });
+    });
 
     PATS.$$('[data-toggle-password]').forEach(function (button) {
       button.addEventListener('click', function () {
@@ -362,6 +432,7 @@ var PatsAuth = (function () {
       switchPanel('login');
     });
 
+    resetRegisterForm();
     initGoogle();
   }
 
@@ -370,6 +441,9 @@ var PatsAuth = (function () {
     logout: logout,
     showError: showError,
     clearError: clearError,
-    showLoginPanel: function () { switchPanel('login'); }
+    showLoginPanel: function () {
+      resetRegisterForm();
+      switchPanel('login');
+    }
   };
 })();

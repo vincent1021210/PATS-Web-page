@@ -15,7 +15,7 @@ var SCHEMA = {
   users: [
     'id', 'email', 'username', 'displayName', 'avatarUrl',
     'passwordHash', 'passwordSalt', 'provider', 'status',
-    'settings', 'createdAt', 'lastSeenAt'
+    'settings', 'createdAt', 'lastSeenAt', 'role', 'linkedStudentId'
   ],
   sessions: ['token', 'userId', 'createdAt', 'expiresAt', 'userAgent'],
   resets: [

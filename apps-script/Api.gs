@@ -24,6 +24,17 @@ function requireApiContext_(user) {
   return user;
 }
 
+/**
+ * 家長帳號不參與聊天，只用來查看孩子的違規與舉報紀錄。
+ *
+ * 前端會把聊天介面藏起來，但那只是介面；真正的界線必須畫在這裡，
+ * 否則直接打 API 就繞過去了。
+ */
+function denyParent_(user) {
+  if (roleOf_(user) === 'parent') throw new Error('PARENT_NO_CHAT');
+  return user;
+}
+
 /* ------------------------------------------------------------ 共用查詢工具 */
 
 function userMap_() {
@@ -80,6 +91,7 @@ function apiBootstrap_(user) {
  */
 function apiListConversations_(user, payload) {
   requireApiContext_(user);
+  denyParent_(user);
   payload = payload || {};
   applyAutoArchive_(user);
 
@@ -177,6 +189,7 @@ function countUnread_(messages, conversationId, userId, lastReadAt) {
 
 function apiListMessages_(user, payload) {
   requireApiContext_(user);
+  denyParent_(user);
   var conversationId = payload.conversationId;
   assertMember_(user.id, conversationId);
   var users = userMap_();
@@ -222,6 +235,7 @@ function apiListMessages_(user, payload) {
 
 function apiSendMessage_(user, payload) {
   requireApiContext_(user);
+  denyParent_(user);
   var conversationId = payload.conversationId;
   assertMember_(user.id, conversationId);
   var body = String(payload.body || '').trim();
@@ -255,6 +269,7 @@ function apiSendMessage_(user, payload) {
 
 function apiMarkRead_(user, payload) {
   requireApiContext_(user);
+  denyParent_(user);
   var row = assertMember_(user.id, payload.conversationId);
   dbUpdate_('participants', row.id, { lastReadAt: nowIso_() });
   return true;
@@ -264,6 +279,7 @@ function apiMarkRead_(user, payload) {
 
 function apiStartDirect_(user, payload) {
   requireApiContext_(user);
+  denyParent_(user);
   var peer = findUserByAccount_(payload.account);
   if (!peer) throw new Error('USER_NOT_FOUND');
   if (peer.id === user.id) throw new Error('CANNOT_CHAT_SELF');
@@ -303,6 +319,7 @@ function findDirectConversation_(a, b) {
 
 function apiCreateGroup_(user, payload) {
   requireApiContext_(user);
+  denyParent_(user);
   var name = String(payload.name || '').trim();
   if (!name) throw new Error('GROUP_NAME_REQUIRED');
 
@@ -373,6 +390,7 @@ function ensureContact_(userId, peerId) {
 
 function apiListContacts_(user) {
   requireApiContext_(user);
+  denyParent_(user);
   var users = userMap_();
   return dbFilter_('contacts', function (c) { return c.userId === user.id; })
     .map(function (c) {
@@ -390,6 +408,7 @@ function apiListContacts_(user) {
 
 function apiInviteContact_(user, payload) {
   requireApiContext_(user);
+  denyParent_(user);
   var peer = findUserByAccount_(payload.account);
   if (!peer) throw new Error('USER_NOT_FOUND');
   if (peer.id === user.id) throw new Error('CANNOT_ADD_SELF');
@@ -402,6 +421,7 @@ function apiInviteContact_(user, payload) {
 
 function apiSetArchived_(user, payload) {
   requireApiContext_(user);
+  denyParent_(user);
   var row = assertMember_(user.id, payload.conversationId);
   var archived = !!payload.archived;
   dbUpdate_('participants', row.id, {
@@ -489,6 +509,7 @@ function apiClearCache_(user) {
 
 function apiStorageUsage_(user) {
   requireApiContext_(user);
+  // 這裡不擋家長：設定頁會用到，而家長沒有對話，本來就會算出 0。
   var mine = {};
   myParticipations_(user.id).forEach(function (p) { mine[p.conversationId] = true; });
   var bytes = 0;

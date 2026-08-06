@@ -115,6 +115,25 @@
           </div>
 
           <div class="field">
+            <span class="field-label"><strong>身分</strong></span>
+            <div class="role-group" id="role-group" role="radiogroup" aria-label="選擇身分">
+              <button type="button" class="role-btn is-active" data-role="student"
+                      role="radio" aria-checked="true">
+                <span class="material-symbols-outlined">school</span>學生
+              </button>
+              <button type="button" class="role-btn" data-role="teacher"
+                      role="radio" aria-checked="false">
+                <span class="material-symbols-outlined">history_edu</span>老師
+              </button>
+              <button type="button" class="role-btn" data-role="parent"
+                      role="radio" aria-checked="false">
+                <span class="material-symbols-outlined">supervisor_account</span>家長
+              </button>
+            </div>
+            <p class="role-hint" id="role-hint">請使用學校配發的 @smail.hc.edu.tw 信箱</p>
+          </div>
+
+          <div class="field">
             <label class="field-label" for="register-name"><strong>顯示名稱</strong></label>
             <div class="input-wrap">
               <span class="material-symbols-outlined">badge</span>
@@ -124,11 +143,31 @@
           </div>
 
           <div class="field">
-            <label class="field-label" for="register-email"><strong>電子郵件</strong></label>
+            <label class="field-label" for="register-local"><strong>電子郵件</strong></label>
+            <div class="email-row">
+              <div class="input-wrap">
+                <span class="material-symbols-outlined">mail</span>
+                <input id="register-local" type="text" placeholder="帳號"
+                       autocomplete="username" required>
+              </div>
+              <span class="email-domain" id="register-domain">@smail.hc.edu.tw</span>
+              <select class="email-domain hidden" id="register-domain-select"
+                      aria-label="選擇信箱網域">
+                <option value="lsps.hc.edu.tw">@lsps.hc.edu.tw</option>
+                <option value="tmail.hc.edu.tw">@tmail.hc.edu.tw</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="field hidden" id="student-field">
+            <label class="field-label" for="register-student">
+              <strong>孩子的學生帳號</strong>
+              <span class="field-note">必須已經註冊過</span>
+            </label>
             <div class="input-wrap">
-              <span class="material-symbols-outlined">mail</span>
-              <input id="register-email" type="email" placeholder="name@company.com"
-                     autocomplete="email" required>
+              <span class="material-symbols-outlined">child_care</span>
+              <input id="register-student" type="text"
+                     placeholder="child@smail.hc.edu.tw">
             </div>
           </div>
 
@@ -281,6 +320,10 @@
       </div>
 
       <div class="rail-nav">
+        <button class="rail-link hidden" data-view="guardian">
+          <span class="material-symbols-outlined">report</span>
+          <span class="label">違規與舉報</span>
+        </button>
         <button class="rail-link is-active" data-view="dm">
           <span class="material-symbols-outlined">chat</span>
           <span class="label">私訊</span>
@@ -345,6 +388,33 @@
 
     <!-- 設定 -->
     <section class="settings-pane scroll-y hidden" id="settings-pane"></section>
+
+    <!-- 家長專用：孩子的違規與舉報 -->
+    <section class="settings-pane scroll-y hidden" id="guardian-pane">
+      <div class="settings-inner">
+        <h2 class="settings-title">違規與舉報</h2>
+        <p class="settings-lead" id="guardian-lead">查看孩子在校的違規與被舉報紀錄。</p>
+
+        <section class="card settings-card">
+          <div class="settings-card-head">
+            <div class="glyph"><span class="material-symbols-outlined">child_care</span></div>
+            <div>
+              <h3>綁定的學生</h3>
+              <p id="guardian-student">尚未綁定</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card settings-card">
+          <div class="empty-state">
+            <div class="glyph"><span class="material-symbols-outlined">inbox</span></div>
+            <h3>目前沒有任何紀錄</h3>
+            <p>孩子若有違規或被舉報，紀錄會顯示在這裡。<br>
+              家長帳號不參與聊天功能。</p>
+          </div>
+        </section>
+      </div>
+    </section>
   </div>
 
   <div id="modal-root"></div>

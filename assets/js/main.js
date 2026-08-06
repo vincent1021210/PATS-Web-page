@@ -11,6 +11,9 @@ var PatsMain = (function () {
   /* Rail 上的按鈕 → 設定區實際要顯示的子畫面 */
   var SETTINGS_SECTION = { settings: 'archive', profile: 'account', switch: 'switch' };
 
+  /* 需要對話列表的畫面，家長身分看不到這些 */
+  var CHAT_VIEWS = ['dm', 'group', 'archive'];
+
   /* --------------------------------------------------------------- 啟動 */
 
   function boot() {
@@ -60,8 +63,31 @@ var PatsMain = (function () {
     PATS.show($('#app'));
 
     renderIdentity();
+    applyRole(user);
+
+    // 家長沒有聊天功能，直接落在違規與舉報頁，也不需要輪詢新訊息。
+    if (user.canChat === false) {
+      setView('guardian');
+      return;
+    }
     setView('dm', { autoSelect: true });
     PatsChat.startPolling();
+  }
+
+  /** 依身分決定側欄要出現哪些入口。 */
+  function applyRole(user) {
+    var isParent = user.canChat === false;
+    PATS.$$('.rail-link[data-view]').forEach(function (link) {
+      var view = link.getAttribute('data-view');
+      if (view === 'guardian') link.classList.toggle('hidden', !isParent);
+      else if (CHAT_VIEWS.indexOf(view) >= 0) link.classList.toggle('hidden', isParent);
+    });
+
+    if (!isParent) return;
+    var student = user.linkedStudent;
+    $('#guardian-student').textContent = student
+      ? student.name + '（' + student.email + '）'
+      : '尚未綁定，請聯絡管理員協助處理。';
   }
 
   function renderIdentity() {
@@ -88,10 +114,15 @@ var PatsMain = (function () {
 
     var app = $('#app');
     var isSettings = !!SETTINGS_SECTION[view];
+    var isGuardian = view === 'guardian';
+    var fullWidth = isSettings || isGuardian;
 
-    app.setAttribute('data-list-hidden', isSettings ? 'true' : 'false');
-    $('#chat-pane').classList.toggle('hidden', isSettings);
+    app.setAttribute('data-list-hidden', fullWidth ? 'true' : 'false');
+    $('#chat-pane').classList.toggle('hidden', fullWidth);
     $('#settings-pane').classList.toggle('hidden', !isSettings);
+    $('#guardian-pane').classList.toggle('hidden', !isGuardian);
+
+    if (isGuardian) return;
 
     if (isSettings) {
       PatsSettings.render(SETTINGS_SECTION[view]);
