@@ -132,18 +132,44 @@ function createUser_(fields) {
 }
 
 /**
- * 建立第一位管理員帳號。請在指令碼編輯器手動執行（記得先改掉密碼）。
+ * 建立第一位管理員帳號。
+ *
+ * 帳號密碼讀自「專案設定 → 指令碼屬性」，不寫在程式碼裡——因為這份程式碼
+ * 會推到公開的 git repo。需要的屬性：
+ *   ADMIN_EMAIL     必填，登入用的電子郵件
+ *   ADMIN_PASSWORD  必填，至少 8 個字元
+ *   ADMIN_NAME      選填，顯示名稱，預設取電子郵件的帳號部分
+ *
+ * 建立成功後會自動刪掉 ADMIN_PASSWORD，避免明文密碼留在專案屬性中。
  */
 function createAdminAccount() {
+  var props = PropertiesService.getScriptProperties();
+  var email = (props.getProperty('ADMIN_EMAIL') || '').trim();
+  var password = props.getProperty('ADMIN_PASSWORD') || '';
+  var name = (props.getProperty('ADMIN_NAME') || '').trim();
+
+  if (!email || !password) {
+    throw new Error(
+      '請先到「專案設定 → 指令碼屬性」新增 ADMIN_EMAIL 與 ADMIN_PASSWORD 兩個屬性，再執行一次。'
+    );
+  }
+  if (password.length < 8) {
+    throw new Error('ADMIN_PASSWORD 至少需要 8 個字元，請改長一點再執行一次。');
+  }
+
   setup();
   var user = createUser_({
-    email: 'pats.admin@messenger.com',
-    username: 'admin',
-    displayName: 'PATS',
-    password: 'ChangeMe!2026',
+    email: email,
+    username: name || email.split('@')[0],
+    displayName: name || email.split('@')[0],
+    password: password,
     provider: 'password'
   });
-  return user.email;
+
+  props.deleteProperty('ADMIN_PASSWORD');
+
+  return '已建立管理員帳號：' + user.email +
+         '。ADMIN_PASSWORD 屬性已自動刪除，請用這組帳密登入 PATS。';
 }
 
 /* ------------------------------------------------------------- 帳密登入 */
