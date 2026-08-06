@@ -1,0 +1,46 @@
+/**
+ * PATS — 初始化與診斷
+ *
+ * 這個檔案裡的函式都可以安全地從編輯器直接執行，不需要任何參數。
+ */
+
+/**
+ * 一鍵初始化：建立試算表與所有工作表，並回報目前狀態與下一步。
+ * 回傳值會顯示在編輯器的執行紀錄中。
+ */
+function initializeProject() {
+  var url = setup();
+  var userCount = dbAll_('users').length;
+
+  var lines = [
+    'PATS 初始化完成。',
+    '資料庫試算表：' + url,
+    '目前使用者人數：' + userCount,
+    'Google 用戶端 ID：' + (googleClientId_() || '（尚未設定，僅開放帳密登入）')
+  ];
+
+  if (userCount === 0) {
+    lines.push('');
+    lines.push('下一步：打開 Auth.gs，把 createAdminAccount() 裡的 email 與密碼改成你要的，');
+    lines.push('存檔後執行 createAdminAccount，就會建立第一個可登入的帳號。');
+  } else {
+    lines.push('');
+    lines.push('下一步：點右上角「部署」→「新增部署作業」→「網頁應用程式」，');
+    lines.push('執行身分選「我」、存取權限選「任何人」，再把產生的 /exec 網址填進前端的 config.js。');
+  }
+
+  var report = lines.join('\n');
+  Logger.log(report);
+  return report;
+}
+
+/**
+ * 相容用的別名。
+ *
+ * 這個名字在舊版是內部函式，編輯器如果還記著它會出現
+ * 「Script function not found: apiBootstrap」。保留一個安全的同名進入點，
+ * 讓誤觸執行也能得到有用的結果，而不是一個看不懂的錯誤。
+ */
+function apiBootstrap() {
+  return initializeProject();
+}
