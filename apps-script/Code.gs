@@ -17,7 +17,12 @@ function doGet(e) {
   if (params.action) return handleRequest_(params.action, parseJson_(params.payload, {}), params.token);
   return json_({
     ok: true,
-    data: { app: APP_NAME, status: 'ready', googleClientId: googleClientId_() }
+    data: {
+      app: APP_NAME,
+      status: 'ready',
+      googleClientId: googleClientId_(),
+      inviteCodeRequired: !!registrationCode_()
+    }
   });
 }
 
@@ -49,8 +54,14 @@ function json_(value) {
 function publicActions_() {
   return {
     ping: function () { return { app: APP_NAME, time: nowIso_() }; },
-    config: function () { return { googleClientId: googleClientId_() }; },
+    config: function () {
+      return {
+        googleClientId: googleClientId_(),
+        inviteCodeRequired: !!registrationCode_()
+      };
+    },
     login: function (payload) { return authLogin_(payload); },
+    register: function (payload) { return authRegister_(payload); },
     googleLogin: function (payload) { return authGoogleLogin_(payload); },
     session: function (payload) {
       var user = resolveSession_(payload.token);

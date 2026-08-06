@@ -9,12 +9,19 @@ var PatsAuth = (function () {
   var GIS_SRC = 'https://accounts.google.com/gsi/client';
 
   function showError(message) {
-    var box = $('#login-error');
+    showErrorIn('#login-error', message);
+  }
+
+  function showErrorIn(selector, message) {
+    var box = $(selector);
     box.querySelector('[data-role="text"]').textContent = message;
     box.classList.remove('hidden');
   }
 
-  function clearError() { $('#login-error').classList.add('hidden'); }
+  function clearError() {
+    $('#login-error').classList.add('hidden');
+    $('#register-error').classList.add('hidden');
+  }
 
   function setBusy(busy) {
     var button = $('#login-submit');
@@ -45,6 +52,62 @@ var PatsAuth = (function () {
       })
       .catch(function (err) { showError(err.message); })
       .finally(function () { setBusy(false); });
+  }
+
+  /* ---------------------------------------------------------------- 註冊 */
+
+  function switchPanel(target) {
+    clearError();
+    $('#login-panel').classList.toggle('hidden', target === 'register');
+    $('#register-panel').classList.toggle('hidden', target !== 'register');
+    var focus = $(target === 'register' ? '#register-name' : '#login-account');
+    if (focus) focus.focus();
+  }
+
+  function handleRegister(event) {
+    event.preventDefault();
+    clearError();
+
+    var name = $('#register-name').value.trim();
+    var email = $('#register-email').value.trim();
+    var password = $('#register-password').value;
+    var confirm = $('#register-confirm').value;
+    var invite = $('#register-invite').value.trim();
+
+    if (password !== confirm) {
+      return showErrorIn('#register-error', PATS.describeError('PASSWORD_MISMATCH'));
+    }
+
+    var button = $('#register-submit');
+    button.disabled = true;
+    button.textContent = '建立中…';
+
+    PATS.rpc('register', {
+      displayName: name,
+      email: email,
+      password: password,
+      inviteCode: invite,
+      remember: true
+    })
+      .then(function (result) {
+        PATS.writeToken(result.token);
+        $('#register-password').value = '';
+        $('#register-confirm').value = '';
+        PATS.toast('帳號建立完成，歡迎加入 PATS。', 'success');
+        PatsMain.enterApp(result.user);
+      })
+      .catch(function (err) {
+        // 後端啟用邀請碼時才把欄位顯示出來，一般情況不打擾使用者。
+        if (err.code === 'INVITE_CODE_REQUIRED' || err.code === 'INVITE_CODE_INVALID') {
+          $('#invite-field').classList.remove('hidden');
+          $('#register-invite').focus();
+        }
+        showErrorIn('#register-error', err.message);
+      })
+      .finally(function () {
+        button.disabled = false;
+        button.textContent = '建立帳號';
+      });
   }
 
   /* --------------------------------------------------------- Google 登入 */
@@ -140,6 +203,7 @@ var PatsAuth = (function () {
 
   function init() {
     $('#login-form').addEventListener('submit', handleSubmit);
+    $('#register-form').addEventListener('submit', handleRegister);
 
     PATS.$$('[data-toggle-password]').forEach(function (button) {
       button.addEventListener('click', function () {
@@ -156,13 +220,23 @@ var PatsAuth = (function () {
       event.preventDefault();
       PATS.toast('請聯絡系統管理員協助重設密碼。');
     });
-    $('#request-account').addEventListener('click', function (event) {
+    $('#go-register').addEventListener('click', function (event) {
       event.preventDefault();
-      PATS.toast('請聯絡系統管理員為你開通帳號，或直接使用 Google 登入。');
+      switchPanel('register');
+    });
+    $('#go-login').addEventListener('click', function (event) {
+      event.preventDefault();
+      switchPanel('login');
     });
 
     initGoogle();
   }
 
-  return { init: init, logout: logout, showError: showError, clearError: clearError };
+  return {
+    init: init,
+    logout: logout,
+    showError: showError,
+    clearError: clearError,
+    showLoginPanel: function () { switchPanel('login'); }
+  };
 })();

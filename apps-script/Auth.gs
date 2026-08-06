@@ -185,6 +185,68 @@ function authLogin_(payload) {
   };
 }
 
+/* --------------------------------------------------------------- 註冊 */
+
+/**
+ * 邀請碼。設定「指令碼屬性」的 REGISTRATION_CODE 之後，註冊就需要輸入它；
+ * 沒設定則開放任何人註冊。因為 /exec 是匿名可存取的端點，
+ * 正式對外使用時建議設定。
+ */
+function registrationCode_() {
+  return (PropertiesService.getScriptProperties()
+    .getProperty('REGISTRATION_CODE') || '').trim();
+}
+
+/**
+ * 產生不重複的帳號名稱。顯示名稱允許重複（同名同姓很正常），
+ * 但 username 必須唯一，否則登入時無法區分是哪一個人。
+ */
+function uniqueUsername_(base) {
+  var seed = String(base || 'user').replace(/[^a-zA-Z0-9._-]/g, '').toLowerCase() || 'user';
+  var candidate = seed;
+  var suffix = 1;
+  while (dbFind_('users', function (u) {
+    return String(u.username).toLowerCase() === candidate;
+  })) {
+    suffix++;
+    candidate = seed + suffix;
+  }
+  return candidate;
+}
+
+function authRegister_(payload) {
+  var code = registrationCode_();
+  if (code) {
+    var provided = String(payload.inviteCode || '').trim();
+    if (!provided) throw new Error('INVITE_CODE_REQUIRED');
+    if (!safeEqual_(provided, code)) throw new Error('INVITE_CODE_INVALID');
+  }
+
+  var email = String(payload.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('EMAIL_INVALID');
+
+  var displayName = String(payload.displayName || '').trim();
+  if (displayName.length < 2) throw new Error('USERNAME_TOO_SHORT');
+  if (displayName.length > 40) throw new Error('USERNAME_TOO_LONG');
+
+  var password = String(payload.password || '');
+  if (password.length < 8) throw new Error('WEAK_PASSWORD');
+
+  // createUser_ 會在信箱重複時丟出 EMAIL_TAKEN
+  var user = createUser_({
+    email: email,
+    username: uniqueUsername_(email.split('@')[0]),
+    displayName: displayName,
+    password: password,
+    provider: 'password'
+  });
+
+  return {
+    token: createSession_(user.id, !!payload.remember),
+    user: publicUser_(user)
+  };
+}
+
 function authChangePassword_(user, payload) {
   if (user.passwordHash) {
     var current = hashPassword_(payload.currentPassword, user.passwordSalt);

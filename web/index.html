@@ -47,6 +47,8 @@
 
     <main class="auth-main">
       <div class="auth-card card">
+      <!-- 登入 ------------------------------------------------------ -->
+      <div id="login-panel">
         <div class="auth-mark"><span class="material-symbols-outlined">login</span></div>
         <h2 class="auth-title">歡迎回來</h2>
         <p class="auth-sub">請輸入您的帳號密碼以登入系統</p>
@@ -96,8 +98,83 @@
         <div id="google-slot" class="google-slot"></div>
 
         <p class="auth-footer">
-          還沒有帳號？ <a href="#" id="request-account">聯絡管理員申請</a>
+          還沒有帳號？ <a href="#" id="go-register">立即註冊</a>
         </p>
+      </div>
+
+      <!-- 註冊 ------------------------------------------------------ -->
+      <div id="register-panel" class="hidden">
+        <div class="auth-mark"><span class="material-symbols-outlined">person_add</span></div>
+        <h2 class="auth-title">建立帳號</h2>
+        <p class="auth-sub">填寫以下資料即可開始使用 PATS</p>
+
+        <form id="register-form" class="auth-form" autocomplete="on">
+          <div id="register-error" class="form-error hidden">
+            <span class="material-symbols-outlined">error</span>
+            <span data-role="text"></span>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="register-name"><strong>顯示名稱</strong></label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">badge</span>
+              <input id="register-name" type="text" placeholder="王小明"
+                     autocomplete="name" maxlength="40" required>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="register-email"><strong>電子郵件</strong></label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">mail</span>
+              <input id="register-email" type="email" placeholder="name@company.com"
+                     autocomplete="email" required>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="register-password">
+              <strong>密碼</strong>
+              <span class="field-note">至少 8 個字元</span>
+            </label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">lock</span>
+              <input id="register-password" type="password" placeholder="設定你的密碼"
+                     autocomplete="new-password" required>
+              <button type="button" class="icon-btn" data-toggle-password="register-password"
+                      aria-label="顯示密碼">
+                <span class="material-symbols-outlined">visibility_off</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="register-confirm"><strong>確認密碼</strong></label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">lock_reset</span>
+              <input id="register-confirm" type="password" placeholder="再次輸入密碼"
+                     autocomplete="new-password" required>
+            </div>
+          </div>
+
+          <!-- 只有在後端設定了邀請碼時才會顯示 -->
+          <div class="field hidden" id="invite-field">
+            <label class="field-label" for="register-invite"><strong>邀請碼</strong></label>
+            <div class="input-wrap">
+              <span class="material-symbols-outlined">key</span>
+              <input id="register-invite" type="text" placeholder="請向管理員索取">
+            </div>
+          </div>
+
+          <button id="register-submit" type="submit" class="btn btn-primary btn-block">
+            建立帳號
+          </button>
+        </form>
+
+        <p class="auth-footer">
+          已經有帳號了？ <a href="#" id="go-login">返回登入</a>
+        </p>
+      </div>
       </div>
     </main>
   </section>

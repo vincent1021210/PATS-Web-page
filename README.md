@@ -1,7 +1,7 @@
 # PATS · 企業級商務通訊
 
 前端是**託管在 GitHub Pages 的純靜態網站**，後端與資料庫是 **Google Apps Script + Google 試算表**。
-登入支援自建帳密與 Google 登入，介面為手刻 CSS 並完整支援 RWD。
+支援自助註冊、帳密登入與 Google 登入，介面為手刻 CSS 並完整支援 RWD。
 
 ```
 瀏覽器 ── HTTPS ──▶ GitHub Pages（HTML / CSS / JS）
@@ -22,7 +22,7 @@ web/                      ← 部署到 GitHub Pages 的靜態網站
     └── js/
         ├── config.js     ★ 唯一需要你手動修改的檔案
         ├── core.js       狀態、rpc()、共用 UI（toast / modal / menu）
-        ├── auth.js       帳密登入、Google 登入、登出
+        ├── auth.js       註冊、帳密登入、Google 登入、登出
         ├── chat.js       對話列表與訊息畫面
         ├── settings.js   設定區三個子畫面
         └── main.js       啟動流程與畫面切換
@@ -30,9 +30,10 @@ web/                      ← 部署到 GitHub Pages 的靜態網站
 apps-script/              ← 部署成 Apps Script 網頁應用程式（API）
 ├── appsscript.json       資訊清單：執行身分、權限範圍
 ├── Code.gs               doPost 進入點與 apiCall 路由
-├── Auth.gs               密碼雜湊、工作階段、Google ID Token 驗證
+├── Auth.gs               註冊、密碼雜湊、工作階段、Google ID Token 驗證
 ├── Db.gs                 試算表資料層（schema、CRUD、鎖、快取）
-└── Api.gs                對話 / 訊息 / 聯絡人 / 封存 / 設定的商業邏輯
+├── Api.gs                對話 / 訊息 / 聯絡人 / 封存 / 設定的商業邏輯
+└── Setup.gs              可安全手動執行的初始化與診斷進入點
 
 .github/workflows/deploy-pages.yml   推上 main 就自動發佈前端
 ```
@@ -65,9 +66,14 @@ clasp push
 
 接著在編輯器中依序執行兩個函式：
 
-1. `setup()` — 建立試算表與所有工作表，回傳試算表網址。
-2. `createAdminAccount()` — 建立第一個帳號。
-   **請先修改函式內的 email 與密碼**，預設是 `pats.admin@messenger.com` / `ChangeMe!2026`。
+1. `initializeProject()` — 建立試算表與所有工作表，並在執行紀錄回報目前狀態與下一步。
+   （`setup()` 也可以，前者多印一份診斷資訊。）
+2. `createAdminAccount()` — 建立第一個帳號。帳密讀自「專案設定 → 指令碼屬性」，
+   請先新增 `ADMIN_EMAIL` 與 `ADMIN_PASSWORD`（可選 `ADMIN_NAME`）再執行。
+   **密碼刻意不寫在程式碼裡**，因為這份程式碼會推到公開的 git repo；
+   建立成功後 `ADMIN_PASSWORD` 會被自動刪除。
+
+> 編輯器的執行選單只會出現可以安全手動執行的函式，其餘內部函式都以底線結尾而被隱藏。
 
 然後「部署」→「新增部署作業」→ 類型選「網頁應用程式」：
 
@@ -96,6 +102,16 @@ clasp push
 4. 重新部署一次後端。
 
 用 Google 登入的人若尚未有 PATS 帳號，系統會自動建立。
+
+### 註冊與邀請碼
+
+登入頁的「立即註冊」可以自助建立帳號，填寫顯示名稱、電子郵件與密碼（至少 8 個字元），
+成功後直接登入。顯示名稱允許重複，內部的 `username` 會依電子郵件自動產生且保證唯一。
+
+因為 `/exec` 是匿名可存取的端點，開放註冊等於任何人都能建立帳號。要限制註冊對象時，
+到「專案設定 → 指令碼屬性」新增 `REGISTRATION_CODE`，值設成你要發給同事的邀請碼。
+設定後註冊表單會自動出現邀請碼欄位（前端在後端回報需要時才顯示，平時不佔版面）；
+刪掉這個屬性就恢復開放註冊。
 
 ### 第三步 — 設定並發佈前端
 

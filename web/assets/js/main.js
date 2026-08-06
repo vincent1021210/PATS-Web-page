@@ -46,7 +46,7 @@ var PatsMain = (function () {
     PATS.hide($('#loading'));
     PATS.hide($('#app'));
     PATS.show($('#auth'));
-    PatsAuth.clearError();
+    PatsAuth.showLoginPanel();
   }
 
   function enterApp(user) {
