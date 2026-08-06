@@ -85,7 +85,17 @@ clasp push
 `{"ok":true,"data":{"app":"PATS","status":"ready",...}}`，代表後端正常。
 
 > **每次改完後端程式碼，都要「管理部署作業」→ 編輯 → 版本選「新版本」再儲存**，
-> 否則線上跑的還是舊版。
+> 否則線上跑的還是舊版。`clasp push` 只更新程式碼，不會更新對外服務的版本；
+> 前端會出現「伺服器不認得這個操作」就是漏了這一步。
+>
+> 用 clasp 的話，要更新**同一個**部署（網址才不會變，`config.js` 不用改）：
+>
+> ```bash
+> clasp deployments                                   # 找出 config.js 裡那個網址對應的 ID
+> clasp deploy --deploymentId <那個ID> --description "改了什麼"
+> ```
+>
+> 用 `clasp deploy` 不帶 `--deploymentId` 會建立**另一個**網址，前端仍連舊的，等於沒更新。
 
 ### 第二步 — 設定 Google 登入（選填）
 
