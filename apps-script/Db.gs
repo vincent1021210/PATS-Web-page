@@ -99,7 +99,7 @@ function sheet_(name) {
 /**
  * 讀出整張表，回傳物件陣列。每筆多帶一個不可見的 _row（試算表列號）供更新使用。
  */
-function dbAll(name) {
+function dbAll_(name) {
   if (ROW_CACHE[name]) return ROW_CACHE[name];
   var sheet = sheet_(name);
   var lastRow = sheet.getLastRow();
@@ -117,24 +117,24 @@ function dbAll(name) {
   return rows;
 }
 
-function dbFind(name, predicate) {
-  var rows = dbAll(name);
+function dbFind_(name, predicate) {
+  var rows = dbAll_(name);
   for (var i = 0; i < rows.length; i++) {
     if (predicate(rows[i])) return rows[i];
   }
   return null;
 }
 
-function dbFilter(name, predicate) {
-  return dbAll(name).filter(predicate);
+function dbFilter_(name, predicate) {
+  return dbAll_(name).filter(predicate);
 }
 
-function dbGet(name, id) {
+function dbGet_(name, id) {
   var key = SCHEMA[name][0];
-  return dbFind(name, function (r) { return String(r[key]) === String(id); });
+  return dbFind_(name, function (r) { return String(r[key]) === String(id); });
 }
 
-function dbInsert(name, obj) {
+function dbInsert_(name, obj) {
   var headers = SCHEMA[name];
   var record = {};
   headers.forEach(function (h) { record[h] = obj[h] === undefined ? '' : obj[h]; });
@@ -145,9 +145,9 @@ function dbInsert(name, obj) {
   return record;
 }
 
-function dbUpdate(name, id, patch) {
+function dbUpdate_(name, id, patch) {
   var headers = SCHEMA[name];
-  var existing = dbGet(name, id);
+  var existing = dbGet_(name, id);
   if (!existing) return null;
   var sheet = sheet_(name);
   withLock_(function () {
@@ -160,8 +160,8 @@ function dbUpdate(name, id, patch) {
   return Object.assign({}, existing, patch);
 }
 
-function dbDelete(name, id) {
-  var existing = dbGet(name, id);
+function dbDelete_(name, id) {
+  var existing = dbGet_(name, id);
   if (!existing) return false;
   withLock_(function () { sheet_(name).deleteRow(existing._row); });
   invalidate_(name);

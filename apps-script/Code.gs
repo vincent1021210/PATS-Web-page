@@ -32,7 +32,7 @@ function doPost(e) {
 }
 
 function handleRequest_(action, payload, token) {
-  return json_(apiCall(action, payload, token));
+  return json_(apiCall_(action, payload, token));
 }
 
 function json_(value) {
@@ -61,21 +61,21 @@ function publicActions_() {
 
 function privateActions_() {
   return {
-    bootstrap: apiBootstrap,
-    listConversations: apiListConversations,
-    listMessages: apiListMessages,
-    sendMessage: apiSendMessage,
-    markRead: apiMarkRead,
-    startDirect: apiStartDirect,
-    createGroup: apiCreateGroup,
-    listContacts: apiListContacts,
-    inviteContact: apiInviteContact,
-    setArchived: apiSetArchived,
-    updateProfile: apiUpdateProfile,
-    changePassword: apiChangePassword,
-    updateSettings: apiUpdateSettings,
-    clearCache: apiClearCache,
-    storageUsage: apiStorageUsage
+    bootstrap: apiBootstrap_,
+    listConversations: apiListConversations_,
+    listMessages: apiListMessages_,
+    sendMessage: apiSendMessage_,
+    markRead: apiMarkRead_,
+    startDirect: apiStartDirect_,
+    createGroup: apiCreateGroup_,
+    listContacts: apiListContacts_,
+    inviteContact: apiInviteContact_,
+    setArchived: apiSetArchived_,
+    updateProfile: apiUpdateProfile_,
+    changePassword: apiChangePassword_,
+    updateSettings: apiUpdateSettings_,
+    clearCache: apiClearCache_,
+    storageUsage: apiStorageUsage_
   };
 }
 
@@ -83,7 +83,7 @@ function privateActions_() {
  * 統一的伺服器入口。永遠回傳 { ok: true, data } 或 { ok: false, error }，
  * 讓前端只需要處理一種格式。
  */
-function apiCall(action, payload, token) {
+function apiCall_(action, payload, token) {
   payload = payload || {};
   try {
     if (action === 'logout') {

@@ -44,26 +44,26 @@ function safeEqual_(a, b) {
 function createSession_(userId, remember) {
   var token = Utilities.getUuid() + Utilities.getUuid().replace(/-/g, '');
   var ttl = remember ? SESSION_REMEMBER_TTL_MS : SESSION_TTL_MS;
-  dbInsert('sessions', {
+  dbInsert_('sessions', {
     token: token,
     userId: userId,
     createdAt: nowIso_(),
     expiresAt: new Date(Date.now() + ttl).toISOString(),
     userAgent: ''
   });
-  dbUpdate('users', userId, { lastSeenAt: nowIso_() });
+  dbUpdate_('users', userId, { lastSeenAt: nowIso_() });
   return token;
 }
 
 function resolveSession_(token) {
   if (!token) return null;
-  var session = dbFind('sessions', function (s) { return s.token === token; });
+  var session = dbFind_('sessions', function (s) { return s.token === token; });
   if (!session) return null;
   if (new Date(session.expiresAt).getTime() < Date.now()) {
-    dbDelete('sessions', session.token);
+    dbDelete_('sessions', session.token);
     return null;
   }
-  var user = dbGet('users', session.userId);
+  var user = dbGet_('users', session.userId);
   if (!user || user.status === 'disabled') return null;
   return user;
 }
@@ -75,15 +75,15 @@ function requireUser_(token) {
 }
 
 function destroySession_(token) {
-  if (token) dbDelete('sessions', token);
+  if (token) dbDelete_('sessions', token);
 }
 
 /** 清掉過期的工作階段，可掛在每日觸發程序上。 */
 function purgeExpiredSessions() {
   var now = Date.now();
-  dbAll('sessions')
+  dbAll_('sessions')
     .filter(function (s) { return new Date(s.expiresAt).getTime() < now; })
-    .forEach(function (s) { dbDelete('sessions', s.token); });
+    .forEach(function (s) { dbDelete_('sessions', s.token); });
 }
 
 /* -------------------------------------------------------------- 使用者 */
@@ -103,7 +103,7 @@ function publicUser_(user) {
 function findUserByAccount_(account) {
   var key = String(account || '').trim().toLowerCase();
   if (!key) return null;
-  return dbFind('users', function (u) {
+  return dbFind_('users', function (u) {
     return String(u.email).toLowerCase() === key ||
            String(u.username).toLowerCase() === key;
   });
@@ -115,7 +115,7 @@ function createUser_(fields) {
   if (findUserByAccount_(email)) throw new Error('EMAIL_TAKEN');
 
   var salt = newSalt_();
-  return dbInsert('users', {
+  return dbInsert_('users', {
     id: newId_(),
     email: email,
     username: fields.username || email.split('@')[0],
@@ -168,7 +168,7 @@ function authChangePassword_(user, payload) {
     throw new Error('WEAK_PASSWORD');
   }
   var salt = newSalt_();
-  dbUpdate('users', user.id, {
+  dbUpdate_('users', user.id, {
     passwordHash: hashPassword_(payload.newPassword, salt),
     passwordSalt: salt
   });
@@ -221,7 +221,7 @@ function authGoogleLogin_(payload) {
       provider: 'google'
     });
   } else if (claims.picture && !user.avatarUrl) {
-    dbUpdate('users', user.id, { avatarUrl: claims.picture });
+    dbUpdate_('users', user.id, { avatarUrl: claims.picture });
     user.avatarUrl = claims.picture;
   }
 

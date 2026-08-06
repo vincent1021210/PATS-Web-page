@@ -2,13 +2,13 @@
  * PATS — 應用邏輯
  *
  * 這裡的每個函式都對應前端 rpc() 的一個 action，統一由 Code.gs 的
- * apiCall() 分派並負責錯誤包裝。
+ * apiCall_() 分派並負責錯誤包裝。
  */
 
 /* --------------------------------------------------------------- 呼叫守衛 */
 
 /**
- * 所有 api* 函式的 user 參數都由 Code.gs 的 apiCall() 帶入，
+ * 所有 api* 函式的 user 參數都由 Code.gs 的 apiCall_() 帶入，
  * 從編輯器下拉選單直接執行時會是 undefined。這裡先擋下來並說明該執行什麼，
  * 免得使用者看到毫無頭緒的 TypeError。
  */
@@ -28,20 +28,20 @@ function requireApiContext_(user) {
 
 function userMap_() {
   var map = {};
-  dbAll('users').forEach(function (u) { map[u.id] = u; });
+  dbAll_('users').forEach(function (u) { map[u.id] = u; });
   return map;
 }
 
 function myParticipations_(userId) {
-  return dbFilter('participants', function (p) { return p.userId === userId; });
+  return dbFilter_('participants', function (p) { return p.userId === userId; });
 }
 
 function participantsOf_(conversationId) {
-  return dbFilter('participants', function (p) { return p.conversationId === conversationId; });
+  return dbFilter_('participants', function (p) { return p.conversationId === conversationId; });
 }
 
 function assertMember_(userId, conversationId) {
-  var row = dbFind('participants', function (p) {
+  var row = dbFind_('participants', function (p) {
     return p.userId === userId && p.conversationId === conversationId;
   });
   if (!row) throw new Error('NOT_A_MEMBER');
@@ -64,7 +64,7 @@ function conversationAvatar_(conv, participants, users, meId) {
 
 /* -------------------------------------------------------------- 啟動載入 */
 
-function apiBootstrap(user) {
+function apiBootstrap_(user) {
   requireApiContext_(user);
   return {
     user: publicUser_(user),
@@ -78,7 +78,7 @@ function apiBootstrap(user) {
 /**
  * scope: 'dm' 私人訊息 / 'group' 多人討論 / 'archive' 封存
  */
-function apiListConversations(user, payload) {
+function apiListConversations_(user, payload) {
   requireApiContext_(user);
   payload = payload || {};
   applyAutoArchive_(user);
@@ -88,7 +88,7 @@ function apiListConversations(user, payload) {
   var byConv = {};
   mine.forEach(function (p) { byConv[p.conversationId] = p; });
 
-  var allParticipants = dbAll('participants');
+  var allParticipants = dbAll_('participants');
   var participantsByConv = {};
   allParticipants.forEach(function (p) {
     (participantsByConv[p.conversationId] = participantsByConv[p.conversationId] || []).push(p);
@@ -99,7 +99,7 @@ function apiListConversations(user, payload) {
   var scope = payload.scope || 'dm';
   var keyword = String(payload.q || '').trim().toLowerCase();
 
-  var list = dbAll('conversations')
+  var list = dbAll_('conversations')
     .filter(function (conv) { return !!byConv[conv.id]; })
     .filter(function (conv) {
       var me = byConv[conv.id];
@@ -146,7 +146,7 @@ function previewText_(message, users) {
 }
 
 function liveMessages_() {
-  return dbAll('messages').filter(function (m) {
+  return dbAll_('messages').filter(function (m) {
     return String(m.deleted) !== 'true' && m.deleted !== true;
   });
 }
@@ -175,14 +175,14 @@ function countUnread_(messages, conversationId, userId, lastReadAt) {
 
 /* ------------------------------------------------------------------ 訊息 */
 
-function apiListMessages(user, payload) {
+function apiListMessages_(user, payload) {
   requireApiContext_(user);
   var conversationId = payload.conversationId;
   assertMember_(user.id, conversationId);
   var users = userMap_();
   var since = payload.since ? new Date(payload.since).getTime() : 0;
 
-  var rows = dbFilter('messages', function (m) {
+  var rows = dbFilter_('messages', function (m) {
     return m.conversationId === conversationId &&
            String(m.deleted) !== 'true' &&
            new Date(m.createdAt).getTime() > since;
@@ -202,7 +202,7 @@ function apiListMessages(user, payload) {
     };
   });
 
-  var conv = dbGet('conversations', conversationId);
+  var conv = dbGet_('conversations', conversationId);
   var members = participantsOf_(conversationId);
   return {
     conversation: {
@@ -220,7 +220,7 @@ function apiListMessages(user, payload) {
   };
 }
 
-function apiSendMessage(user, payload) {
+function apiSendMessage_(user, payload) {
   requireApiContext_(user);
   var conversationId = payload.conversationId;
   assertMember_(user.id, conversationId);
@@ -228,7 +228,7 @@ function apiSendMessage(user, payload) {
   if (!body) throw new Error('EMPTY_MESSAGE');
   if (body.length > 4000) throw new Error('MESSAGE_TOO_LONG');
 
-  var message = dbInsert('messages', {
+  var message = dbInsert_('messages', {
     id: newId_(),
     conversationId: conversationId,
     senderId: user.id,
@@ -237,9 +237,9 @@ function apiSendMessage(user, payload) {
     createdAt: nowIso_(),
     deleted: 'false'
   });
-  dbUpdate('conversations', conversationId, { lastMessageAt: message.createdAt });
+  dbUpdate_('conversations', conversationId, { lastMessageAt: message.createdAt });
   unarchiveForAll_(conversationId);
-  apiMarkRead(user, { conversationId: conversationId });
+  apiMarkRead_(user, { conversationId: conversationId });
 
   return {
     id: message.id,
@@ -253,16 +253,16 @@ function apiSendMessage(user, payload) {
   };
 }
 
-function apiMarkRead(user, payload) {
+function apiMarkRead_(user, payload) {
   requireApiContext_(user);
   var row = assertMember_(user.id, payload.conversationId);
-  dbUpdate('participants', row.id, { lastReadAt: nowIso_() });
+  dbUpdate_('participants', row.id, { lastReadAt: nowIso_() });
   return true;
 }
 
 /* ---------------------------------------------------------------- 建立對話 */
 
-function apiStartDirect(user, payload) {
+function apiStartDirect_(user, payload) {
   requireApiContext_(user);
   var peer = findUserByAccount_(payload.account);
   if (!peer) throw new Error('USER_NOT_FOUND');
@@ -271,7 +271,7 @@ function apiStartDirect(user, payload) {
   var existing = findDirectConversation_(user.id, peer.id);
   if (existing) return { conversationId: existing };
 
-  var conv = dbInsert('conversations', {
+  var conv = dbInsert_('conversations', {
     id: newId_(),
     type: 'dm',
     name: '',
@@ -289,11 +289,11 @@ function apiStartDirect(user, payload) {
 
 function findDirectConversation_(a, b) {
   var byConv = {};
-  dbAll('participants').forEach(function (p) {
+  dbAll_('participants').forEach(function (p) {
     (byConv[p.conversationId] = byConv[p.conversationId] || []).push(p.userId);
   });
   var found = null;
-  dbAll('conversations').forEach(function (conv) {
+  dbAll_('conversations').forEach(function (conv) {
     if (found || conv.type !== 'dm') return;
     var ids = byConv[conv.id] || [];
     if (ids.length === 2 && ids.indexOf(a) >= 0 && ids.indexOf(b) >= 0) found = conv.id;
@@ -301,12 +301,12 @@ function findDirectConversation_(a, b) {
   return found;
 }
 
-function apiCreateGroup(user, payload) {
+function apiCreateGroup_(user, payload) {
   requireApiContext_(user);
   var name = String(payload.name || '').trim();
   if (!name) throw new Error('GROUP_NAME_REQUIRED');
 
-  var conv = dbInsert('conversations', {
+  var conv = dbInsert_('conversations', {
     id: newId_(),
     type: 'group',
     name: name,
@@ -325,7 +325,7 @@ function apiCreateGroup(user, payload) {
     addParticipant_(conv.id, member.id, 'member');
   });
 
-  dbInsert('messages', {
+  dbInsert_('messages', {
     id: newId_(),
     conversationId: conv.id,
     senderId: user.id,
@@ -339,11 +339,11 @@ function apiCreateGroup(user, payload) {
 }
 
 function addParticipant_(conversationId, userId, role) {
-  var exists = dbFind('participants', function (p) {
+  var exists = dbFind_('participants', function (p) {
     return p.conversationId === conversationId && p.userId === userId;
   });
   if (exists) return exists;
-  return dbInsert('participants', {
+  return dbInsert_('participants', {
     id: newId_(),
     conversationId: conversationId,
     userId: userId,
@@ -358,11 +358,11 @@ function addParticipant_(conversationId, userId, role) {
 /* ---------------------------------------------------------------- 聯絡人 */
 
 function ensureContact_(userId, peerId) {
-  var exists = dbFind('contacts', function (c) {
+  var exists = dbFind_('contacts', function (c) {
     return c.userId === userId && c.peerId === peerId;
   });
   if (exists) return exists;
-  return dbInsert('contacts', {
+  return dbInsert_('contacts', {
     id: newId_(),
     userId: userId,
     peerId: peerId,
@@ -371,10 +371,10 @@ function ensureContact_(userId, peerId) {
   });
 }
 
-function apiListContacts(user) {
+function apiListContacts_(user) {
   requireApiContext_(user);
   var users = userMap_();
-  return dbFilter('contacts', function (c) { return c.userId === user.id; })
+  return dbFilter_('contacts', function (c) { return c.userId === user.id; })
     .map(function (c) {
       var peer = users[c.peerId] || {};
       return {
@@ -388,7 +388,7 @@ function apiListContacts(user) {
     .sort(function (a, b) { return a.name.localeCompare(b.name); });
 }
 
-function apiInviteContact(user, payload) {
+function apiInviteContact_(user, payload) {
   requireApiContext_(user);
   var peer = findUserByAccount_(payload.account);
   if (!peer) throw new Error('USER_NOT_FOUND');
@@ -400,11 +400,11 @@ function apiInviteContact(user, payload) {
 
 /* ------------------------------------------------------------------ 封存 */
 
-function apiSetArchived(user, payload) {
+function apiSetArchived_(user, payload) {
   requireApiContext_(user);
   var row = assertMember_(user.id, payload.conversationId);
   var archived = !!payload.archived;
-  dbUpdate('participants', row.id, {
+  dbUpdate_('participants', row.id, {
     archived: archived ? 'true' : 'false',
     archivedAt: archived ? nowIso_() : ''
   });
@@ -414,7 +414,7 @@ function apiSetArchived(user, payload) {
 function unarchiveForAll_(conversationId) {
   participantsOf_(conversationId).forEach(function (p) {
     if (String(p.archived) === 'true') {
-      dbUpdate('participants', p.id, { archived: 'false', archivedAt: '' });
+      dbUpdate_('participants', p.id, { archived: 'false', archivedAt: '' });
     }
   });
 }
@@ -427,7 +427,7 @@ function applyAutoArchive_(user) {
 
   var threshold = Date.now() - days * 24 * 60 * 60 * 1000;
   var conversations = {};
-  dbAll('conversations').forEach(function (c) { conversations[c.id] = c; });
+  dbAll_('conversations').forEach(function (c) { conversations[c.id] = c; });
 
   myParticipations_(user.id).forEach(function (p) {
     if (String(p.archived) === 'true') return;
@@ -435,20 +435,20 @@ function applyAutoArchive_(user) {
     if (!conv) return;
     var last = new Date(conv.lastMessageAt || conv.createdAt).getTime();
     if (last < threshold) {
-      dbUpdate('participants', p.id, { archived: 'true', archivedAt: nowIso_() });
+      dbUpdate_('participants', p.id, { archived: 'true', archivedAt: nowIso_() });
     }
   });
 }
 
 /* ------------------------------------------------------------------ 設定 */
 
-function apiUpdateProfile(user, payload) {
+function apiUpdateProfile_(user, payload) {
   requireApiContext_(user);
   var patch = {};
   if (payload.username !== undefined) {
     var username = String(payload.username).trim();
     if (username.length < 2) throw new Error('USERNAME_TOO_SHORT');
-    var taken = dbFind('users', function (u) {
+    var taken = dbFind_('users', function (u) {
       return u.id !== user.id && String(u.username).toLowerCase() === username.toLowerCase();
     });
     if (taken) throw new Error('USERNAME_TAKEN');
@@ -457,17 +457,17 @@ function apiUpdateProfile(user, payload) {
   }
   if (payload.avatarUrl !== undefined) patch.avatarUrl = String(payload.avatarUrl).trim();
   if (!Object.keys(patch).length) return publicUser_(user);
-  dbUpdate('users', user.id, patch);
+  dbUpdate_('users', user.id, patch);
   return publicUser_(Object.assign({}, user, patch));
 }
 
-function apiChangePassword(user, payload) {
+function apiChangePassword_(user, payload) {
   requireApiContext_(user);
   authChangePassword_(user, payload);
   return true;
 }
 
-function apiUpdateSettings(user, payload) {
+function apiUpdateSettings_(user, payload) {
   requireApiContext_(user);
   var settings = Object.assign(
     {},
@@ -476,18 +476,18 @@ function apiUpdateSettings(user, payload) {
     payload.settings || {}
   );
   settings.archiveDays = Number(settings.archiveDays) || 0;
-  dbUpdate('users', user.id, { settings: JSON.stringify(settings) });
+  dbUpdate_('users', user.id, { settings: JSON.stringify(settings) });
   return settings;
 }
 
 /** 「清除快取資料」：只丟掉伺服器端快取，不動訊息本體。 */
-function apiClearCache(user) {
+function apiClearCache_(user) {
   requireApiContext_(user);
   CacheService.getScriptCache().removeAll(['conversations:' + user.id, 'messages:' + user.id]);
   return true;
 }
 
-function apiStorageUsage(user) {
+function apiStorageUsage_(user) {
   requireApiContext_(user);
   var mine = {};
   myParticipations_(user.id).forEach(function (p) { mine[p.conversationId] = true; });
