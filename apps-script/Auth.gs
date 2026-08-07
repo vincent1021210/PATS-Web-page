@@ -282,6 +282,8 @@ function validateSignup_(payload) {
 
   var email = String(payload.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('EMAIL_INVALID');
+  // 前端是把網域接在帳號後面組出信箱的，帳號那段混進 @ 或空白就會組出怪東西。
+  if (!/^[a-z0-9._%+-]+$/.test(email.split('@')[0])) throw new Error('EMAIL_LOCAL_INVALID');
   if (ROLES[role].domains.indexOf(emailDomain_(email)) < 0) {
     throw new Error('EMAIL_DOMAIN_MISMATCH');
   }
@@ -294,8 +296,13 @@ function validateSignup_(payload) {
   // 家長必須掛在一個已註冊的學生底下，否則不知道要看誰的紀錄。
   var studentId = '';
   if (role === 'parent') {
-    var account = String(payload.studentAccount || '').trim();
+    var account = String(payload.studentAccount || '').trim().toLowerCase();
     if (!account) throw new Error('STUDENT_ACCOUNT_REQUIRED');
+    // 只填帳號名稱時補上學生網域，家長不必自己打完整信箱。
+    if (account.indexOf('@') < 0) account += '@' + ROLES.student.domains[0];
+    if (ROLES.student.domains.indexOf(emailDomain_(account)) < 0) {
+      throw new Error('STUDENT_ACCOUNT_DOMAIN');
+    }
     var student = findUserByAccount_(account);
     if (!student) throw new Error('STUDENT_NOT_FOUND');
     if (roleOf_(student) !== 'student') throw new Error('NOT_A_STUDENT');

@@ -59,6 +59,8 @@ var PATS = (function () {
     RESET_TOO_MANY_ATTEMPTS: '錯誤次數過多，這組驗證碼已失效，請重新申請。',
     RESET_TOO_SOON: '驗證碼剛剛才寄出，請等一分鐘再重新寄送。',
     RESET_TICKET_INVALID: '這次的重設流程已失效，請重新操作一次。',
+    EMAIL_LOCAL_INVALID: '電子郵件帳號只能使用英文、數字與 . _ % + - 這些符號。',
+    STUDENT_ACCOUNT_DOMAIN: '孩子的帳號必須是 @smail.hc.edu.tw 的學生信箱。',
     SIGNUP_CODE_INVALID: '驗證碼不正確，請確認後再試一次。',
     SIGNUP_CODE_EXPIRED: '驗證碼已過期，請重新填寫資料並索取一組新的。',
     SIGNUP_TOO_MANY_ATTEMPTS: '錯誤次數過多，這組驗證碼已失效，請重新申請。',
