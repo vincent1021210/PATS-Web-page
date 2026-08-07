@@ -43,7 +43,7 @@ var PATS = (function () {
     BAD_RESPONSE: '伺服器回應格式不正確，請確認部署的是最新版本。',
     BAD_REQUEST: '請求格式錯誤。',
     AUTH_REQUIRED: '登入狀態已過期，請重新登入。',
-    INVALID_CREDENTIALS: '帳號或密碼不正確。',
+    INVALID_CREDENTIALS: '帳號或密碼不正確，或是您還沒有註冊帳號，請在下方創建。',
     WRONG_PASSWORD: '目前的密碼不正確。',
     WEAK_PASSWORD: '密碼至少需要 8 個字元。',
     USERNAME_TOO_SHORT: '顯示名稱至少需要 2 個字元。',
