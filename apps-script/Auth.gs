@@ -95,7 +95,8 @@ function purgeExpiredSessions() {
 var ROLES = {
   student: { label: '學生', domains: ['smail.hc.edu.tw'] },
   teacher: { label: '老師', domains: ['lsps.hc.edu.tw', 'tmail.hc.edu.tw'] },
-  parent: { label: '家長', domains: ['gmail.com'] }
+  parent: { label: '家長', domains: ['gmail.com'] },
+  member: { label: '成員', domains: [] }
 };
 
 function emailDomain_(email) {
@@ -277,39 +278,16 @@ function validateSignup_(payload) {
     if (!safeEqual_(provided, code)) throw new Error('INVITE_CODE_INVALID');
   }
 
-  var role = String(payload.role || '').trim();
-  if (!ROLES[role]) throw new Error('ROLE_REQUIRED');
-
   var email = String(payload.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('EMAIL_INVALID');
-  // 前端是把網域接在帳號後面組出信箱的，帳號那段混進 @ 或空白就會組出怪東西。
   if (!/^[a-z0-9._%+-]+$/.test(email.split('@')[0])) throw new Error('EMAIL_LOCAL_INVALID');
-  if (ROLES[role].domains.indexOf(emailDomain_(email)) < 0) {
-    throw new Error('EMAIL_DOMAIN_MISMATCH');
-  }
   if (findUserByAccount_(email)) throw new Error('EMAIL_TAKEN');
 
   var displayName = String(payload.displayName || '').trim();
   if (displayName.length < 2) throw new Error('USERNAME_TOO_SHORT');
   if (displayName.length > 40) throw new Error('USERNAME_TOO_LONG');
 
-  // 家長必須掛在一個已註冊的學生底下，否則不知道要看誰的紀錄。
-  var studentId = '';
-  if (role === 'parent') {
-    var account = String(payload.studentAccount || '').trim().toLowerCase();
-    if (!account) throw new Error('STUDENT_ACCOUNT_REQUIRED');
-    // 只填帳號名稱時補上學生網域，家長不必自己打完整信箱。
-    if (account.indexOf('@') < 0) account += '@' + ROLES.student.domains[0];
-    if (ROLES.student.domains.indexOf(emailDomain_(account)) < 0) {
-      throw new Error('STUDENT_ACCOUNT_DOMAIN');
-    }
-    var student = findUserByAccount_(account);
-    if (!student) throw new Error('STUDENT_NOT_FOUND');
-    if (roleOf_(student) !== 'student') throw new Error('NOT_A_STUDENT');
-    studentId = student.id;
-  }
-
-  return { role: role, email: email, displayName: displayName, studentId: studentId };
+  return { role: 'member', email: email, displayName: displayName, studentId: '' };
 }
 
 function purgeExpiredSignups_() {
@@ -361,7 +339,6 @@ function authRequestSignupCode_(payload) {
 
 function sendSignupCodeMail_(info, code) {
   var minutes = Math.round(SIGNUP_CODE_TTL_MS / 60000);
-  var roleLabel = ROLES[info.role].label;
 
   MailApp.sendEmail({
     to: info.email,
@@ -369,7 +346,7 @@ function sendSignupCodeMail_(info, code) {
     body: [
       info.displayName + ' 你好，',
       '',
-      '你正在以「' + roleLabel + '」身分註冊 PATS。',
+      '你正在註冊 PATS。',
       '你的驗證碼是：' + code,
       '',
       '請在 ' + minutes + ' 分鐘內回到 PATS 輸入這組驗證碼，帳號才會建立。',
@@ -381,7 +358,7 @@ function sendSignupCodeMail_(info, code) {
       '<div style="font-family:system-ui,-apple-system,\'Noto Sans TC\',sans-serif;',
       'max-width:440px;color:#1f2937;line-height:1.7">',
       '<p>' + escapeHtml_(info.displayName) + ' 你好，</p>',
-      '<p>你正在以「<strong>' + roleLabel + '</strong>」身分註冊 PATS。你的驗證碼是：</p>',
+      '<p>你正在註冊 PATS。你的驗證碼是：</p>',
       '<p style="font-size:30px;font-weight:700;letter-spacing:8px;color:#2563eb;',
       'background:#eff6ff;padding:14px 18px;border-radius:10px;text-align:center;',
       'margin:18px 0">' + code + '</p>',
@@ -659,8 +636,10 @@ function authChangePassword_(user, payload) {
 
 /* ------------------------------------------------------- Google 登入 */
 
+var DEFAULT_GOOGLE_CLIENT_ID = '354935544437-1vrje0je178afce6nturpghuu5r16qp6.apps.googleusercontent.com';
+
 function googleClientId_() {
-  return PropertiesService.getScriptProperties().getProperty('GOOGLE_CLIENT_ID') || '';
+  return PropertiesService.getScriptProperties().getProperty('GOOGLE_CLIENT_ID') || DEFAULT_GOOGLE_CLIENT_ID;
 }
 
 /**
@@ -695,18 +674,13 @@ function authGoogleLogin_(payload) {
   var email = String(claims.email).toLowerCase();
   var user = findUserByAccount_(email);
   if (!user) {
-    // 家長帳號一定要綁學生，沒辦法只憑 Google 登入就建立。
-    var role = roleOfEmail_(email);
-    if (!role) throw new Error('EMAIL_DOMAIN_MISMATCH');
-    if (role === 'parent') throw new Error('PARENT_MUST_REGISTER');
-
     user = createUser_({
       email: email,
-      username: claims.name || email.split('@')[0],
+      username: uniqueUsername_(email.split('@')[0]),
       displayName: claims.name || email.split('@')[0],
       avatarUrl: claims.picture || '',
       provider: 'google',
-      role: role
+      role: 'member'
     });
   } else if (claims.picture && !user.avatarUrl) {
     dbUpdate_('users', user.id, { avatarUrl: claims.picture });

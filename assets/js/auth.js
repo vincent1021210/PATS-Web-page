@@ -81,60 +81,12 @@ var PatsAuth = (function () {
       $(PANELS[name].el).classList.toggle('hidden', name !== target);
     });
     if (target === 'reset') resetFlow();
+    if (target === 'register') paintGoogleButton($('#google-slot-register'), 'signup_with');
     var focus = $(PANELS[target].focus);
     if (focus) focus.focus();
   }
 
-  /* 三種身分各自的信箱網域與說明，必須和後端 Auth.gs 的 ROLES 一致。 */
-  var ROLES = {
-    student: {
-      label: '學生',
-      domains: ['smail.hc.edu.tw'],
-      hint: '請使用學校配發的 @smail.hc.edu.tw 信箱'
-    },
-    teacher: {
-      label: '老師',
-      domains: ['lsps.hc.edu.tw', 'tmail.hc.edu.tw'],
-      hint: '請使用 @lsps.hc.edu.tw 或 @tmail.hc.edu.tw 信箱'
-    },
-    parent: {
-      label: '家長',
-      domains: ['gmail.com'],
-      hint: '請使用 Gmail 信箱，並填寫孩子已註冊的學生帳號。' +
-            '家長帳號只會收到孩子的違規與舉報通知，不能使用聊天功能。'
-    }
-  };
-
-  /* 反查表：網域 → 身分，用來判斷使用者貼進來的信箱屬於哪一種身分。 */
-  var DOMAIN_ROLE = {};
-  Object.keys(ROLES).forEach(function (role) {
-    ROLES[role].domains.forEach(function (domain) { DOMAIN_ROLE[domain] = role; });
-  });
-
-  var LOCAL_PART = /^[A-Za-z0-9._%+-]+$/;
-
-  var registerRole = 'student';
-
-  function selectRole(role) {
-    registerRole = role;
-    clearError();
-
-    PATS.$$('#role-group .role-btn').forEach(function (button) {
-      var active = button.getAttribute('data-role') === role;
-      button.classList.toggle('is-active', active);
-      button.setAttribute('aria-checked', active ? 'true' : 'false');
-    });
-
-    $('#role-hint').textContent = ROLES[role].hint;
-    $('#student-field').classList.toggle('hidden', role !== 'parent');
-    $('#register-student').required = role === 'parent';
-
-    // 老師有兩個網域可選，其餘身分只有一個，直接顯示成固定文字。
-    var multi = ROLES[role].domains.length > 1;
-    $('#register-domain').classList.toggle('hidden', multi);
-    $('#register-domain-select').classList.toggle('hidden', !multi);
-    $('#register-domain').textContent = '@' + ROLES[role].domains[0];
-  }
+  var EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   /**
    * 把註冊表單清成初始狀態。
@@ -143,96 +95,22 @@ var PatsAuth = (function () {
    * 於登入／註冊之間來回切換時清除，免得打到一半的資料被吃掉。
    */
   function resetRegisterForm() {
-    ['#register-name', '#register-local', '#register-student',
+    ['#register-name', '#register-email',
       '#register-password', '#register-confirm', '#register-invite',
       '#register-code'].forEach(function (s) {
       $(s).value = '';
     });
     $('#invite-field').classList.add('hidden');
     signup = null;
-    selectRole('student');
     registerStep(1);
   }
 
-  function registerEmail() {
-    var local = $('#register-local').value.trim().replace(/^@+/, '');
-    var domain = ROLES[registerRole].domains.length > 1
-      ? $('#register-domain-select').value
-      : ROLES[registerRole].domains[0];
-    return local ? local + '@' + domain : '';
-  }
-
-  /**
-   * 帳號欄只該填 @ 前面那一段，但使用者常常整串信箱貼進來。
-   * 這裡把網域拆掉，並依網域判斷這是哪一種身分，需要的話自動切換。
-   */
-  function absorbTypedDomain() {
-    var input = $('#register-local');
-    var raw = input.value.trim();
-    if (raw.indexOf('@') < 0) return true;
-
-    var at = raw.indexOf('@');
-    var local = raw.slice(0, at);
-    var domain = raw.slice(at + 1).toLowerCase().replace(/\s+/g, '').replace(/@+$/, '');
-    input.value = local;
-
-    if (!domain) return true;
-
-    var role = DOMAIN_ROLE[domain];
-    if (!role) {
-      showErrorIn('#register-error',
-        '不支援的信箱網域「@' + domain + '」。PATS 只開放 ' +
-        '@smail.hc.edu.tw（學生）、@lsps.hc.edu.tw 或 @tmail.hc.edu.tw（老師）、' +
-        '@gmail.com（家長）。');
-      return false;
-    }
-
-    if (role !== registerRole) {
-      selectRole(role);
-      PATS.toast('已依信箱網域自動把身分改成「' + ROLES[role].label + '」。', 'info');
-    }
-    if (ROLES[role].domains.length > 1) $('#register-domain-select').value = domain;
-    return true;
-  }
-
-  /** 家長常只填孩子的帳號名稱，這裡補上學生網域並檢查對不對。 */
-  function normalizeStudentAccount() {
-    var input = $('#register-student');
-    var value = input.value.trim().toLowerCase();
-    if (!value) return '';
-    if (value.indexOf('@') < 0) value += '@' + ROLES.student.domains[0];
-    input.value = value;
-    return value;
-  }
-
-  /** 送出前把三種身分的信箱規則逐一判斷過，錯了就別浪費一次寄信。 */
   function validateRegisterFields() {
-    if (!absorbTypedDomain()) return false;
-
-    var local = $('#register-local').value.trim();
-    if (!local) {
-      showErrorIn('#register-error', '請填寫電子郵件帳號（@ 前面那一段）。');
+    var email = $('#register-email').value.trim();
+    if (!EMAIL_PATTERN.test(email)) {
+      showErrorIn('#register-error', PATS.describeError('EMAIL_INVALID'));
       return false;
     }
-    if (!LOCAL_PART.test(local)) {
-      showErrorIn('#register-error',
-        '電子郵件帳號只能使用英文、數字與 . _ % + - 這些符號。');
-      return false;
-    }
-
-    if (registerRole === 'parent') {
-      var student = normalizeStudentAccount();
-      if (!student) {
-        showErrorIn('#register-error', PATS.describeError('STUDENT_ACCOUNT_REQUIRED'));
-        return false;
-      }
-      if (ROLES.student.domains.indexOf(student.split('@').pop()) < 0) {
-        showErrorIn('#register-error',
-          '孩子的帳號必須是 @' + ROLES.student.domains[0] + ' 的學生信箱。');
-        return false;
-      }
-    }
-
     return true;
   }
 
@@ -242,6 +120,8 @@ var PatsAuth = (function () {
   function registerStep(step) {
     $('#register-form').classList.toggle('hidden', step !== 1);
     $('#register-verify-form').classList.toggle('hidden', step !== 2);
+    $('#google-slot-register').classList.toggle('hidden', step !== 1);
+    $('#register-divider').classList.toggle('hidden', step !== 1);
 
     PATS.$$('#register-steps .step').forEach(function (li) {
       var n = Number(li.getAttribute('data-step'));
@@ -251,7 +131,7 @@ var PatsAuth = (function () {
 
     $('#register-sub').textContent = step === 2 && signup
       ? '驗證碼已寄到 ' + signup.email + '，請查看收件匣'
-      : '填寫以下資料，我們會寄驗證碼確認你的信箱';
+      : '使用 Google 帳號即可建立並登入';
 
     var focus = step === 2 ? '#register-code' : '#register-name';
     if ($(focus)) $(focus).focus();
@@ -270,10 +150,8 @@ var PatsAuth = (function () {
     }
 
     var draft = {
-      role: registerRole,
       displayName: $('#register-name').value.trim(),
-      email: registerEmail(),
-      studentAccount: $('#register-student').value.trim(),
+      email: $('#register-email').value.trim(),
       inviteCode: $('#register-invite').value.trim(),
       password: password
     };
@@ -281,10 +159,8 @@ var PatsAuth = (function () {
     var done = busy(isResend ? '#register-resend' : '#register-submit', '寄送中…');
 
     return PATS.rpc('requestSignupCode', {
-      role: draft.role,
       displayName: draft.displayName,
       email: draft.email,
-      studentAccount: draft.studentAccount,
       inviteCode: draft.inviteCode
     })
       .then(function () {
@@ -448,15 +324,39 @@ var PatsAuth = (function () {
    * 用 Google Identity Services 渲染官方登入按鈕。
    * 取得的 ID Token 交給後端驗簽，換成 PATS 自己的工作階段權杖。
    */
+  function googleButtonOptions(slot, text) {
+    return {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      shape: 'rectangular',
+      text: text,
+      locale: 'zh_TW',
+      logo_alignment: 'center',
+      width: Math.min(slot.offsetWidth || 320, 400)
+    };
+  }
+
+  var googleReady = false;
+
+  function paintGoogleButton(slot, text) {
+    if (!googleReady || !slot || slot.getAttribute('data-painted') === '1') return;
+    if (slot.offsetWidth < 40) return;
+    window.google.accounts.id.renderButton(slot, googleButtonOptions(slot, text));
+    slot.setAttribute('data-painted', '1');
+  }
+
   function initGoogle() {
     var clientId = PATS.state.config.googleClientId;
-    var slot = $('#google-slot');
+    var slots = [$('#google-slot'), $('#google-slot-register')];
 
     if (!clientId) {
-      slot.appendChild(PATS.el('p', {
-        class: 'auth-hint',
-        text: '尚未設定 Google 用戶端 ID，目前僅開放帳密登入。'
-      }));
+      slots.forEach(function (slot) {
+        slot.appendChild(PATS.el('p', {
+          class: 'auth-hint',
+          text: '尚未設定 Google 用戶端 ID，目前僅開放帳密登入。'
+        }));
+      });
       return;
     }
 
@@ -465,25 +365,22 @@ var PatsAuth = (function () {
         window.google.accounts.id.initialize({
           client_id: clientId,
           callback: onCredential,
-          auto_select: false,
-          cancel_on_tap_outside: true
+          auto_select: true,
+          cancel_on_tap_outside: true,
+          context: 'signin',
+          itp_support: true
         });
-        window.google.accounts.id.renderButton(slot, {
-          type: 'standard',
-          theme: 'outline',
-          size: 'large',
-          shape: 'rectangular',
-          text: 'signin_with',
-          locale: 'zh_TW',
-          logo_alignment: 'center',
-          width: Math.min(slot.offsetWidth || 320, 400)
-        });
+        googleReady = true;
+        paintGoogleButton($('#google-slot'), 'signin_with');
+        window.google.accounts.id.prompt();
       })
       .catch(function () {
-        slot.appendChild(PATS.el('p', {
-          class: 'auth-hint',
-          text: '無法載入 Google 登入元件，請檢查網路連線。'
-        }));
+        slots.forEach(function (slot) {
+          slot.appendChild(PATS.el('p', {
+            class: 'auth-hint',
+            text: '無法載入 Google 登入元件，請檢查網路連線。'
+          }));
+        });
       });
   }
 
@@ -496,7 +393,11 @@ var PatsAuth = (function () {
         PATS.writeToken(result.token);
         PatsMain.enterApp(result.user);
       })
-      .catch(function (err) { showError(err.message); });
+      .catch(function (err) {
+        var onRegister = !$('#register-panel').classList.contains('hidden');
+        if (onRegister) showErrorIn('#register-error', err.message);
+        else showError(err.message);
+      });
   }
 
   function loadScript(src) {
@@ -541,14 +442,6 @@ var PatsAuth = (function () {
     $('#register-back').addEventListener('click', function () {
       clearError();
       registerStep(1);
-    });
-    // 離開欄位就先判斷一次，不用等到按下按鈕才知道填錯。
-    $('#register-local').addEventListener('blur', absorbTypedDomain);
-    $('#register-student').addEventListener('blur', normalizeStudentAccount);
-    PATS.$$('#role-group .role-btn').forEach(function (button) {
-      button.addEventListener('click', function () {
-        selectRole(button.getAttribute('data-role'));
-      });
     });
 
     PATS.$$('[data-toggle-password]').forEach(function (button) {

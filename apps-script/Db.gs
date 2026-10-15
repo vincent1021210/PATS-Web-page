@@ -112,7 +112,10 @@ function dbAll_(name) {
   var sheet = sheet_(name);
   var lastRow = sheet.getLastRow();
   var headers = SCHEMA[name];
-  if (lastRow < 2) return [];
+  if (lastRow < 2) {
+    ROW_CACHE[name] = [];
+    return ROW_CACHE[name];
+  }
   var values = sheet.getRange(2, 1, lastRow - 1, headers.length).getValues();
   var rows = [];
   for (var i = 0; i < values.length; i++) {
@@ -154,18 +157,55 @@ function dbInsert_(name, obj) {
 }
 
 function dbUpdate_(name, id, patch) {
+  var updated = dbUpdateMany_(name, [{ id: id, patch: patch }]);
+  return updated.length ? updated[0] : null;
+}
+
+/**
+ * 一次鎖、每個列只寫一段連續欄位。
+ * 舊版每個欄位各打一次 setValue，送出訊息時會連開好幾次鎖。
+ */
+function dbUpdateMany_(name, items) {
+  if (!items || !items.length) return [];
   var headers = SCHEMA[name];
-  var existing = dbGet_(name, id);
-  if (!existing) return null;
   var sheet = sheet_(name);
-  withLock_(function () {
+  var prepared = [];
+  var results = [];
+
+  items.forEach(function (item) {
+    var existing = dbGet_(name, item.id);
+    if (!existing) return;
+    var patch = item.patch || {};
+    var min = -1;
+    var max = -1;
     Object.keys(patch).forEach(function (field) {
       var col = headers.indexOf(field);
-      if (col >= 0) sheet.getRange(existing._row, col + 1).setValue(patch[field]);
+      if (col < 0) return;
+      if (min < 0 || col < min) min = col;
+      if (col > max) max = col;
+    });
+    if (min < 0) {
+      results.push(existing);
+      return;
+    }
+    var slice = [];
+    for (var col = min; col <= max; col++) {
+      var field = headers[col];
+      var value = Object.prototype.hasOwnProperty.call(patch, field) ? patch[field] : existing[field];
+      slice.push(value === undefined || value === null ? '' : value);
+    }
+    prepared.push({ row: existing._row, col: min + 1, slice: slice });
+    results.push(Object.assign({}, existing, patch));
+  });
+
+  if (!prepared.length) return results;
+  withLock_(function () {
+    prepared.forEach(function (item) {
+      sheet.getRange(item.row, item.col, 1, item.slice.length).setValues([item.slice]);
     });
   });
   invalidate_(name);
-  return Object.assign({}, existing, patch);
+  return results;
 }
 
 function dbDelete_(name, id) {
@@ -176,12 +216,20 @@ function dbDelete_(name, id) {
   return true;
 }
 
+var LOCK_DEPTH = 0;
+
+/**
+ * 同一輪執行裡可以巢狀呼叫。內層直接跑，避免對已持有的鎖再 waitLock 一次。
+ */
 function withLock_(fn) {
+  if (LOCK_DEPTH > 0) return fn();
   var lock = LockService.getScriptLock();
+  lock.waitLock(DB_LOCK_TIMEOUT_MS);
+  LOCK_DEPTH++;
   try {
-    lock.waitLock(DB_LOCK_TIMEOUT_MS);
     return fn();
   } finally {
+    LOCK_DEPTH--;
     try { lock.releaseLock(); } catch (e) {}
   }
 }

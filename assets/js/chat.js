@@ -11,7 +11,16 @@ var PatsChat = (function () {
   var state = PATS.state;
 
   var POLL_INTERVAL_MS = 6000;
-  var searchTimer = null;
+  var LIST_POLL_EVERY = 2;
+
+  var inbox = [];
+  var listSignature = '';
+  var loadedScope = '';
+  var thread = { day: '', sender: '' };
+  var polling = false;
+  var pollTimer = null;
+  var pollTick = 0;
+  var pollRunning = false;
 
   var VIEW_META = {
     dm: {
@@ -160,17 +169,25 @@ var PatsChat = (function () {
 
     var body = el('div', { class: 'chat-body scroll-y', id: 'chat-body' });
     pane.appendChild(body);
-    renderMessages(body, data.messages);
+    thread = { day: '', sender: '' };
+    renderMessages(body, data.messages, false);
 
     pane.appendChild(composer());
     scrollToBottom();
   }
 
-  function renderMessages(container, messages) {
-    var lastDay = '';
-    var previousSender = '';
+  function renderMessages(container, messages, appending) {
+    var lastDay = appending ? thread.day : '';
+    var previousSender = appending ? thread.sender : '';
 
     messages.forEach(function (message) {
+      if (messageNode(message.id)) return;
+      if (message.mine && adoptPending(message)) {
+        lastDay = PATS.formatDay(message.createdAt) || lastDay;
+        previousSender = message.senderId;
+        return;
+      }
+
       var day = PATS.formatDay(message.createdAt);
       if (day !== lastDay) {
         container.appendChild(el('div', { class: 'msg-day', text: day }));
@@ -190,8 +207,10 @@ var PatsChat = (function () {
       var showSender = !message.mine && !isTail && state.activeType === 'group';
 
       container.appendChild(el('div', {
-        class: 'msg' + (message.mine ? ' is-mine' : '') + (isTail ? ' is-tail' : ''),
-        'data-id': message.id
+        class: 'msg' + (message.mine ? ' is-mine' : '') + (isTail ? ' is-tail' : '') +
+          (message.pending ? ' is-pending' : ''),
+        'data-id': message.id,
+        'data-sender': message.senderId || ''
       }, [
         isTail ? el('div', { class: 'avatar', style: 'visibility:hidden' })
                : PATS.avatarNode(message.senderName, message.senderAvatar),
@@ -202,6 +221,37 @@ var PatsChat = (function () {
         ])
       ]));
     });
+
+    thread.day = lastDay;
+    thread.sender = previousSender;
+  }
+
+  function messageNode(id) {
+    var body = $('#chat-body');
+    if (!body || id === undefined || id === null) return null;
+    var nodes = body.querySelectorAll('[data-id]');
+    var key = String(id);
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].getAttribute('data-id') === key) return nodes[i];
+    }
+    return null;
+  }
+
+  /** 輪詢比送出回應先到時，把暫顯氣泡改成伺服器那一則，避免同一句出現兩次。 */
+  function adoptPending(message) {
+    var body = $('#chat-body');
+    if (!body || !message.mine) return false;
+    var nodes = body.querySelectorAll('.msg.is-pending');
+    for (var i = 0; i < nodes.length; i++) {
+      var bubble = nodes[i].querySelector('.bubble');
+      if (!bubble || bubble.textContent !== message.body) continue;
+      nodes[i].setAttribute('data-id', message.id);
+      nodes[i].classList.remove('is-pending');
+      var time = nodes[i].querySelector('.time');
+      if (time) time.textContent = PATS.formatTime(message.createdAt);
+      return true;
+    }
+    return false;
   }
 
   function composer() {
@@ -248,26 +298,69 @@ var PatsChat = (function () {
 
   /* ------------------------------------------------------------ 資料流程 */
 
-  function refreshList(options) {
-    return PATS.rpc('listConversations', { scope: state.view, q: state.keyword })
-      .then(function (list) {
-        state.conversations = list;
-        renderList();
-        PatsMain.updateBadges(list);
+  function visibleConversations() {
+    var q = String(state.keyword || '').toLowerCase();
+    if (!q) return inbox;
+    return inbox.filter(function (row) {
+      return String(row.title || '').toLowerCase().indexOf(q) >= 0 ||
+             String(row.preview || '').toLowerCase().indexOf(q) >= 0;
+    });
+  }
 
-        if (options && options.autoSelect && !state.activeId && list.length &&
-            window.matchMedia('(min-width: 721px)').matches) {
-          return openConversation(list[0].id);
-        }
-        if (!state.activeId) renderPlaceholder();
+  function conversationSignature(list) {
+    var parts = [state.view, state.activeId || '', state.keyword];
+    for (var i = 0; i < list.length; i++) {
+      var conv = list[i];
+      parts.push(conv.id, conv.unread, conv.lastMessageAt, conv.preview, conv.title);
+    }
+    return parts.join('\n');
+  }
+
+  function publishList(options) {
+    var list = visibleConversations();
+    state.conversations = list;
+    var sig = conversationSignature(list);
+    var changed = sig !== listSignature;
+    if (changed) {
+      listSignature = sig;
+      renderList();
+      if (!state.activeId) renderPlaceholder();
+    }
+    PatsMain.updateBadges(inbox);
+
+    if (options && options.autoSelect && !state.activeId && list.length &&
+        window.matchMedia('(min-width: 721px)').matches) {
+      return openConversation(list[0].id);
+    }
+  }
+
+  function refreshList(options) {
+    var scope = state.view;
+    if (loadedScope !== scope) {
+      inbox = [];
+      listSignature = '';
+      state.conversations = [];
+      renderList();
+      if (!state.activeId) renderPlaceholder();
+    }
+    return PATS.rpc('listConversations', { scope: scope })
+      .then(function (list) {
+        if (state.view !== scope) return;
+        loadedScope = scope;
+        inbox = list || [];
+        return publishList(options);
       })
-      .catch(handleError);
+      .catch(function (err) {
+        if (options && options.quiet) return;
+        handleError(err);
+      });
   }
 
   function openConversation(conversationId) {
     state.activeId = conversationId;
     state.lastMessageAt = null;
-    renderList();
+    thread = { day: '', sender: '' };
+    publishList();
     PatsMain.setMobilePane('chat');
 
     return PATS.rpc('listMessages', { conversationId: conversationId })
@@ -286,53 +379,183 @@ var PatsChat = (function () {
   }
 
   function refreshBadgesOnly() {
-    var conv = state.conversations.filter(function (c) { return c.id === state.activeId; })[0];
-    if (conv) { conv.unread = 0; renderList(); PatsMain.updateBadges(state.conversations); }
+    for (var i = 0; i < inbox.length; i++) {
+      if (inbox[i].id !== state.activeId) continue;
+      if (!inbox[i].unread) return;
+      inbox[i].unread = 0;
+      break;
+    }
+    publishList();
+  }
+
+  function touchInboxPreview(conversationId, body, createdAt) {
+    var conv = null;
+    for (var i = 0; i < inbox.length; i++) {
+      if (inbox[i].id === conversationId) { conv = inbox[i]; break; }
+    }
+    if (!conv) return;
+    var name = state.user && (state.user.displayName || state.user.username);
+    conv.preview = name ? name + '：' + body : body;
+    conv.lastMessageAt = createdAt;
+    conv.unread = 0;
+    inbox.sort(function (a, b) {
+      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+    });
+    publishList();
   }
 
   function sendMessage(body) {
     var conversationId = state.activeId;
+    var user = state.user || {};
+    var tempId = 'pending-' + Date.now();
+    var createdAt = new Date().toISOString();
+    appendMessages([{
+      id: tempId,
+      body: body,
+      kind: 'text',
+      createdAt: createdAt,
+      mine: true,
+      pending: true,
+      senderId: user.id,
+      senderName: user.displayName || user.username || '',
+      senderAvatar: user.avatarUrl || ''
+    }], { optimistic: true });
+    touchInboxPreview(conversationId, body, createdAt);
+
     PATS.rpc('sendMessage', { conversationId: conversationId, body: body })
       .then(function (message) {
         if (state.activeId !== conversationId) return;
-        appendMessages([message]);
+        settlePending(tempId, message);
         return refreshList();
       })
-      .catch(handleError);
+      .catch(function (err) {
+        removeMessageNode(tempId);
+        var input = $('#composer-input');
+        if (input && state.activeId === conversationId && !input.value) {
+          input.value = body;
+          input.dispatchEvent(new Event('input'));
+        }
+        handleError(err);
+      });
   }
 
-  function appendMessages(messages) {
-    var body = $('#chat-body');
-    if (!body || !messages.length) return;
-    renderMessages(body, messages);
-    state.lastMessageAt = messages[messages.length - 1].createdAt;
-    scrollToBottom();
-  }
-
-  /** 輪詢：抓新訊息與更新列表，讓多人對話能即時看到內容。 */
-  function poll() {
-    if (!state.user || state.view === 'settings' || state.view === 'profile') return;
-
-    if (state.activeId && state.lastMessageAt) {
-      var conversationId = state.activeId;
-      PATS.rpc('listMessages', { conversationId: conversationId, since: state.lastMessageAt })
-        .then(function (data) {
-          if (state.activeId !== conversationId || !data.messages.length) return;
-          appendMessages(data.messages);
-          return PATS.rpc('markRead', { conversationId: conversationId });
-        })
-        .catch(function () { /* 輪詢錯誤不打擾使用者 */ });
+  function settlePending(tempId, message) {
+    var pending = messageNode(tempId);
+    var existing = messageNode(message.id);
+    if (existing) {
+      if (pending) removeMessageNode(tempId);
+    } else if (pending) {
+      pending.setAttribute('data-id', message.id);
+      pending.classList.remove('is-pending');
+      var time = pending.querySelector('.time');
+      if (time) time.textContent = PATS.formatTime(message.createdAt);
+      syncThreadCursor();
+    } else {
+      appendMessages([message]);
     }
-    refreshList().catch(function () {});
+    state.lastMessageAt = message.createdAt;
+  }
+
+  function removeMessageNode(id) {
+    var node = messageNode(id);
+    if (!node) return;
+    var prev = node.previousElementSibling;
+    node.remove();
+    if (prev && prev.classList.contains('msg-day')) {
+      var next = prev.nextElementSibling;
+      if (!next || !next.classList.contains('msg')) prev.remove();
+    }
+    syncThreadCursor();
+  }
+
+  function syncThreadCursor() {
+    var body = $('#chat-body');
+    thread = { day: '', sender: '' };
+    if (!body) return;
+    var days = body.querySelectorAll('.msg-day');
+    var msgs = body.querySelectorAll('.msg');
+    if (days.length) thread.day = days[days.length - 1].textContent;
+    if (msgs.length) thread.sender = msgs[msgs.length - 1].getAttribute('data-sender') || '';
+  }
+
+  function appendMessages(messages, options) {
+    var body = $('#chat-body');
+    if (!body || !messages || !messages.length) return;
+    var fresh = [];
+    for (var i = 0; i < messages.length; i++) {
+      if (!messageNode(messages[i].id)) fresh.push(messages[i]);
+    }
+    if (!fresh.length) return;
+    var before = body.scrollHeight;
+    renderMessages(body, fresh, true);
+    if (!options || !options.optimistic) {
+      state.lastMessageAt = fresh[fresh.length - 1].createdAt;
+    }
+    if (body.scrollHeight !== before) scrollToBottom();
+  }
+
+  function isChatView(view) {
+    return view === 'dm' || view === 'group' || view === 'archive';
+  }
+
+  function schedulePoll(delay) {
+    clearTimeout(pollTimer);
+    if (!polling) return;
+    pollTimer = setTimeout(runPoll, delay);
+  }
+
+  /**
+   * 上一輪沒回來就不再疊加請求。分頁在背景時暫停。
+   * 開著對話時，新訊息每 6 秒抓一次，列表每 12 秒抓一次。
+   */
+  function runPoll() {
+    if (!polling || pollRunning) return;
+    if (document.hidden || !state.user || !isChatView(state.view)) {
+      schedulePoll(POLL_INTERVAL_MS);
+      return;
+    }
+
+    pollRunning = true;
+    pollTick += 1;
+    var jobs = [];
+    var conversationId = state.activeId;
+
+    if (conversationId) {
+      var payload = { conversationId: conversationId };
+      if (state.lastMessageAt) payload.since = state.lastMessageAt;
+      jobs.push(
+        PATS.rpc('listMessages', payload)
+          .then(function (data) {
+            if (state.activeId !== conversationId || !data || !data.messages || !data.messages.length) return;
+            appendMessages(data.messages);
+            return PATS.rpc('markRead', { conversationId: conversationId });
+          })
+          .catch(function () { /* 輪詢錯誤不打擾使用者 */ })
+      );
+    }
+
+    if (!conversationId || pollTick % LIST_POLL_EVERY === 0) {
+      jobs.push(refreshList({ quiet: true }));
+    }
+
+    Promise.all(jobs).then(function () {
+      pollRunning = false;
+      schedulePoll(POLL_INTERVAL_MS);
+    });
   }
 
   function startPolling() {
     stopPolling();
-    state.poller = setInterval(poll, POLL_INTERVAL_MS);
+    polling = true;
+    pollTick = 0;
+    schedulePoll(POLL_INTERVAL_MS);
   }
 
   function stopPolling() {
-    if (state.poller) clearInterval(state.poller);
+    polling = false;
+    pollRunning = false;
+    clearTimeout(pollTimer);
+    pollTimer = null;
     state.poller = null;
   }
 
@@ -439,12 +662,14 @@ var PatsChat = (function () {
     });
 
     $('#list-search').addEventListener('input', function (event) {
-      clearTimeout(searchTimer);
-      var value = event.target.value;
-      searchTimer = setTimeout(function () {
-        state.keyword = value.trim();
-        refreshList();
-      }, 220);
+      state.keyword = event.target.value.trim();
+      publishList();
+    });
+
+    document.addEventListener('visibilitychange', function () {
+      if (!polling || document.hidden || pollRunning) return;
+      clearTimeout(pollTimer);
+      runPoll();
     });
   }
 

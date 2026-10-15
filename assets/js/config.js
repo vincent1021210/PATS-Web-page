@@ -26,5 +26,5 @@ var PATS_CONFIG = {
    *
    * 範例：'1234567890-abcdefg.apps.googleusercontent.com'
    */
-  googleClientId: ''
+  googleClientId: '354935544437-1vrje0je178afce6nturpghuu5r16qp6.apps.googleusercontent.com'
 };

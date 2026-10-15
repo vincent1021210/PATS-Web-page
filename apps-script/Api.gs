@@ -106,8 +106,7 @@ function apiListConversations_(user, payload) {
     (participantsByConv[p.conversationId] = participantsByConv[p.conversationId] || []).push(p);
   });
 
-  var allMessages = liveMessages_();
-  var lastMessages = lastMessageByConversation_(allMessages);
+  var indexed = indexMessages_(liveMessages_());
   var scope = payload.scope || 'dm';
   var keyword = String(payload.q || '').trim().toLowerCase();
 
@@ -123,8 +122,8 @@ function apiListConversations_(user, payload) {
     .map(function (conv) {
       var members = participantsByConv[conv.id] || [];
       var me = byConv[conv.id];
-      var last = lastMessages[conv.id];
-      var lastReadAt = me.lastReadAt ? new Date(me.lastReadAt).getTime() : 0;
+      var last = indexed.latest[conv.id];
+      var lastReadAt = me.lastReadAt ? timeMs_(me.lastReadAt) : 0;
       return {
         id: conv.id,
         type: conv.type,
@@ -134,7 +133,8 @@ function apiListConversations_(user, payload) {
         archived: scope === 'archive',
         lastMessageAt: conv.lastMessageAt || conv.createdAt,
         preview: last ? previewText_(last, users) : '',
-        unread: countUnread_(allMessages, conv.id, user.id, lastReadAt)
+        unread: countUnreadBucket_(indexed.byConv[conv.id], user.id, lastReadAt),
+        _stamp: timeMs_(conv.lastMessageAt || conv.createdAt)
       };
     })
     .filter(function (row) {
@@ -142,10 +142,9 @@ function apiListConversations_(user, payload) {
       return row.title.toLowerCase().indexOf(keyword) >= 0 ||
              String(row.preview).toLowerCase().indexOf(keyword) >= 0;
     })
-    .sort(function (a, b) {
-      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
-    });
+    .sort(function (a, b) { return b._stamp - a._stamp; });
 
+  list.forEach(function (row) { delete row._stamp; });
   return list;
 }
 
@@ -163,24 +162,38 @@ function liveMessages_() {
   });
 }
 
-function lastMessageByConversation_(messages) {
-  var latest = {};
-  messages.forEach(function (m) {
-    var current = latest[m.conversationId];
-    if (!current || new Date(m.createdAt).getTime() >= new Date(current.createdAt).getTime()) {
-      latest[m.conversationId] = m;
-    }
-  });
-  return latest;
+function timeMs_(iso) {
+  if (!iso) return 0;
+  var t = new Date(iso).getTime();
+  return isNaN(t) ? 0 : t;
 }
 
-function countUnread_(messages, conversationId, userId, lastReadAt) {
-  var count = 0;
+/** 訊息只掃一遍，同時做出「依對話分組」與「各對話最後一則」。 */
+function indexMessages_(messages) {
+  var byConv = {};
+  var latest = {};
+  var latestAt = {};
   for (var i = 0; i < messages.length; i++) {
     var m = messages[i];
-    if (m.conversationId === conversationId &&
-        m.senderId !== userId &&
-        new Date(m.createdAt).getTime() > lastReadAt) count++;
+    var id = m.conversationId;
+    var bucket = byConv[id];
+    if (!bucket) byConv[id] = bucket = [];
+    bucket.push(m);
+    var t = timeMs_(m.createdAt);
+    if (latestAt[id] === undefined || t >= latestAt[id]) {
+      latestAt[id] = t;
+      latest[id] = m;
+    }
+  }
+  return { byConv: byConv, latest: latest };
+}
+
+function countUnreadBucket_(bucket, userId, lastReadAt) {
+  if (!bucket || !bucket.length) return 0;
+  var count = 0;
+  for (var i = 0; i < bucket.length; i++) {
+    var m = bucket[i];
+    if (m.senderId !== userId && timeMs_(m.createdAt) > lastReadAt) count++;
   }
   return count;
 }
@@ -193,15 +206,21 @@ function apiListMessages_(user, payload) {
   var conversationId = payload.conversationId;
   assertMember_(user.id, conversationId);
   var users = userMap_();
-  var since = payload.since ? new Date(payload.since).getTime() : 0;
+  var since = payload.since ? timeMs_(payload.since) : 0;
+  var pending = [];
+  var all = dbAll_('messages');
+  for (var i = 0; i < all.length; i++) {
+    var raw = all[i];
+    if (raw.conversationId !== conversationId) continue;
+    if (String(raw.deleted) === 'true' || raw.deleted === true) continue;
+    var at = timeMs_(raw.createdAt);
+    if (at <= since) continue;
+    pending.push({ m: raw, t: at });
+  }
+  pending.sort(function (a, b) { return a.t - b.t; });
 
-  var rows = dbFilter_('messages', function (m) {
-    return m.conversationId === conversationId &&
-           String(m.deleted) !== 'true' &&
-           new Date(m.createdAt).getTime() > since;
-  }).sort(function (a, b) {
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-  }).map(function (m) {
+  var rows = pending.map(function (row) {
+    var m = row.m;
     var sender = users[m.senderId] || {};
     return {
       id: m.id,
@@ -214,6 +233,9 @@ function apiListMessages_(user, payload) {
       senderAvatar: sender.avatarUrl || ''
     };
   });
+
+  // 輪詢只補新訊息，不必再組一次成員名單。
+  if (payload.since) return { messages: rows };
 
   var conv = dbGet_('conversations', conversationId);
   var members = participantsOf_(conversationId);
@@ -242,18 +264,21 @@ function apiSendMessage_(user, payload) {
   if (!body) throw new Error('EMPTY_MESSAGE');
   if (body.length > 4000) throw new Error('MESSAGE_TOO_LONG');
 
-  var message = dbInsert_('messages', {
-    id: newId_(),
-    conversationId: conversationId,
-    senderId: user.id,
-    body: body,
-    kind: 'text',
-    createdAt: nowIso_(),
-    deleted: 'false'
+  var message = withLock_(function () {
+    var created = dbInsert_('messages', {
+      id: newId_(),
+      conversationId: conversationId,
+      senderId: user.id,
+      body: body,
+      kind: 'text',
+      createdAt: nowIso_(),
+      deleted: 'false'
+    });
+    dbUpdate_('conversations', conversationId, { lastMessageAt: created.createdAt });
+    unarchiveForAll_(conversationId);
+    apiMarkRead_(user, { conversationId: conversationId });
+    return created;
   });
-  dbUpdate_('conversations', conversationId, { lastMessageAt: message.createdAt });
-  unarchiveForAll_(conversationId);
-  apiMarkRead_(user, { conversationId: conversationId });
 
   return {
     id: message.id,
@@ -432,32 +457,49 @@ function apiSetArchived_(user, payload) {
 }
 
 function unarchiveForAll_(conversationId) {
+  var pending = [];
   participantsOf_(conversationId).forEach(function (p) {
     if (String(p.archived) === 'true') {
-      dbUpdate_('participants', p.id, { archived: 'false', archivedAt: '' });
+      pending.push({ id: p.id, patch: { archived: 'false', archivedAt: '' } });
     }
   });
+  if (pending.length) dbUpdateMany_('participants', pending);
 }
 
-/** 依使用者設定的天數，把久未互動的對話自動搬進封存。 */
+/**
+ * 依使用者設定的天數，把久未互動的對話自動搬進封存。
+ * 粒度是「天」，不必跟著每 6 秒的列表輪詢各跑一次，同一人 10 分鐘內只檢查一回。
+ */
 function applyAutoArchive_(user) {
+  var cache = CacheService.getScriptCache();
+  var key = 'pats-archive:' + user.id;
+  try {
+    if (cache.get(key)) return;
+  } catch (err) { /* 快取不可用時照常檢查 */ }
+
   var settings = Object.assign({}, DEFAULT_USER_SETTINGS, parseJson_(user.settings, {}));
   var days = Number(settings.archiveDays);
-  if (!days || days <= 0) return;
+  if (!days || days <= 0) {
+    try { cache.put(key, '1', 600); } catch (err2) {}
+    return;
+  }
 
   var threshold = Date.now() - days * 24 * 60 * 60 * 1000;
   var conversations = {};
   dbAll_('conversations').forEach(function (c) { conversations[c.id] = c; });
 
+  var stamp = nowIso_();
+  var pending = [];
   myParticipations_(user.id).forEach(function (p) {
     if (String(p.archived) === 'true') return;
     var conv = conversations[p.conversationId];
     if (!conv) return;
-    var last = new Date(conv.lastMessageAt || conv.createdAt).getTime();
-    if (last < threshold) {
-      dbUpdate_('participants', p.id, { archived: 'true', archivedAt: nowIso_() });
+    if (timeMs_(conv.lastMessageAt || conv.createdAt) < threshold) {
+      pending.push({ id: p.id, patch: { archived: 'true', archivedAt: stamp } });
     }
   });
+  if (pending.length) dbUpdateMany_('participants', pending);
+  try { cache.put(key, '1', 600); } catch (err3) {}
 }
 
 /* ------------------------------------------------------------------ 設定 */

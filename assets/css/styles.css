@@ -54,8 +54,8 @@ html, body {
 }
 
 body {
-  font-family: "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI",
-               "Microsoft JhengHei", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Microsoft JhengHei", "PingFang TC", -apple-system, BlinkMacSystemFont,
+               "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.55;
   color: var(--ink-900);
@@ -595,6 +595,7 @@ select.email-domain {
 .msg.is-mine .bubble {
   background: var(--brand-600); color: #fff; border-color: var(--brand-600);
 }
+.msg.is-pending .bubble { opacity: .62; }
 .msg .time { margin-top: 4px; font-size: 11px; color: var(--ink-400); }
 .msg.is-mine .time { text-align: right; }
 
