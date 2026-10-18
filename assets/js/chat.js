@@ -133,6 +133,10 @@ var PatsChat = (function () {
 
   /* ------------------------------------------------------------- 對話區 */
 
+  function isPrivateChat(conv) {
+    return !!(conv && conv.type !== 'group');
+  }
+
   function peerOf(conv) {
     var members = (conv && conv.members) || [];
     var me = state.user && state.user.id;
@@ -140,6 +144,19 @@ var PatsChat = (function () {
       if (members[i].id !== me) return members[i];
     }
     return null;
+  }
+
+  function startCall(conv) {
+    if (!window.PatsCall) {
+      PATS.toast('通話模組尚未載入，請強制重新整理頁面。', 'error');
+      return;
+    }
+    var peer = peerOf(conv);
+    if (!peer) {
+      PATS.toast('找不到通話對象。', 'error');
+      return;
+    }
+    PatsCall.dial(peer);
   }
 
   function renderPlaceholder() {
@@ -169,15 +186,9 @@ var PatsChat = (function () {
         el('div', { class: 'sub', text: subtitle })
       ]),
       el('div', { class: 'actions' }, [
-        conv.type === 'dm' ? el('button', {
+        isPrivateChat(conv) ? el('button', {
           class: 'icon-btn call-btn', type: 'button', title: '語音通話', 'aria-label': '語音通話',
-          onclick: function () {
-            if (!window.PatsCall) {
-              PATS.toast('通話模組尚未載入。', 'error');
-              return;
-            }
-            PatsCall.dial(peerOf(conv));
-          }
+          onclick: function () { startCall(conv); }
         }, [icon('call')]) : null,
         el('button', {
           class: 'icon-btn', type: 'button', title: '更多',
@@ -192,6 +203,14 @@ var PatsChat = (function () {
     renderMessages(body, data.messages, false);
 
     pane.appendChild(composer());
+    if (isPrivateChat(conv)) {
+      pane.appendChild(el('div', { class: 'call-bar' }, [
+        el('button', {
+          class: 'btn btn-primary call-bar-btn', type: 'button',
+          onclick: function () { startCall(conv); }
+        }, [icon('call'), el('span', { text: '語音通話' })])
+      ]));
+    }
     scrollToBottom();
   }
 
@@ -582,7 +601,15 @@ var PatsChat = (function () {
 
   function openConversationMenu(anchor, conv) {
     var archived = state.view === 'archive';
-    PATS.openMenu(anchor, [
+    var items = [];
+    if (isPrivateChat(conv)) {
+      items.push({
+        label: '語音通話',
+        icon: 'call',
+        onSelect: function () { startCall(conv); }
+      });
+    }
+    items.push(
       {
         label: archived ? '移回主要訊息' : '封存這個對話',
         icon: archived ? 'unarchive' : 'archive',
@@ -597,7 +624,8 @@ var PatsChat = (function () {
             .catch(handleError);
         }
       }
-    ]);
+    );
+    PATS.openMenu(anchor, items);
   }
 
   function setArchived(conversationId, archived) {

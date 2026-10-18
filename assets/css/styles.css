@@ -548,18 +548,32 @@ select.email-domain {
 }
 
 .chat-head {
-  display: flex; align-items: center; gap: 12px;
-  min-height: var(--header-h); padding: 8px 16px;
+  display: flex; align-items: center; gap: 10px;
+  min-height: var(--header-h); padding: 8px 12px;
   background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
-.chat-head .meta { min-width: 0; }
+.chat-head .meta { flex: 1; min-width: 0; }
 .chat-head .title {
   font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .chat-head .sub { font-size: 12px; color: var(--ink-500); }
-.chat-head .actions { margin-left: auto; display: flex; gap: 2px; }
+.chat-head .actions {
+  margin-left: auto; display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+}
 .chat-back { display: none; }
+.call-bar {
+  display: none;
+  padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+}
+.call-bar-btn {
+  width: 100%;
+  height: 44px;
+  gap: 8px;
+}
 
 .chat-body { flex: 1; padding: 20px 24px; display: flex; flex-direction: column; gap: 4px; }
 
@@ -925,7 +939,13 @@ select.email-domain {
   .chat-back { display: inline-flex; }
   .chat-body { padding: 14px 12px; }
   .msg { max-width: 88%; }
-  .composer { padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  .composer { padding: 10px 12px 8px; }
+  .call-bar { display: block; }
+  .chat-head .call-btn {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+  }
 
   .settings-inner { padding: 24px 16px 40px; }
   .settings-title { font-size: 20px; }
