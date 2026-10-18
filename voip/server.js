@@ -83,7 +83,19 @@ io.on('connection', function (socket) {
       name: String((payload && payload.name) || userId)
     });
     socket.data.userId = userId;
-    if (ack) ack({ ok: true });
+    if (ack) ack({ ok: true, online: users.size });
+  });
+
+  socket.on('check-peer', function (payload, ack) {
+    var userId = String((payload && payload.userId) || '').trim();
+    var target = userId && users.get(userId);
+    if (ack) {
+      ack({
+        ok: true,
+        online: !!(target && target.socketId),
+        name: target ? target.name : ''
+      });
+    }
   });
 
   socket.on('call-user', function (payload, ack) {
@@ -125,6 +137,8 @@ io.on('connection', function (socket) {
   });
 });
 
-server.listen(PORT, function () {
-  console.log('PATS 信令伺服器已啟動：http://localhost:' + PORT);
+server.listen(PORT, '0.0.0.0', function () {
+  console.log('PATS 信令伺服器已啟動：http://0.0.0.0:' + PORT);
+  console.log('本機測試：http://localhost:' + PORT + '/health');
+  console.log('區網請用這台電腦的 IPv4，例如 http://192.168.x.x:' + PORT + '/health');
 });

@@ -12,6 +12,7 @@ var PatsMain = (function () {
   var SETTINGS_SECTION = {
     settings: 'archive',
     profile: 'account',
+    call: 'call',
     admin: 'admin',
     switch: 'switch'
   };
@@ -78,7 +79,31 @@ var PatsMain = (function () {
     }
     setView('dm', { autoSelect: true });
     PatsChat.startPolling();
-    if (window.PatsCall) PatsCall.connect(user);
+    if (window.PatsCall) {
+      PatsCall.connect(user);
+      paintSignalBadge();
+      if (!state._signalBound) {
+        state._signalBound = true;
+        PatsCall.onSignalChange(paintSignalBadge);
+      }
+    }
+  }
+
+  function paintSignalBadge() {
+    var badge = document.getElementById('signal-badge');
+    if (!badge || !window.PatsCall) return;
+    var st = PatsCall.signalState();
+    var map = {
+      online: { text: '通話就緒', cls: 'is-ok' },
+      connecting: { text: '通話連線中…', cls: 'is-wait' },
+      offline: { text: '通話離線', cls: 'is-bad' },
+      blocked: { text: '需 HTTPS 信令', cls: 'is-bad' },
+      idle: { text: '通話未設定', cls: 'is-bad' }
+    };
+    var info = map[st] || map.idle;
+    badge.textContent = info.text;
+    badge.className = 'signal-badge ' + info.cls;
+    badge.classList.remove('hidden');
   }
 
   /** 依身分決定側欄要出現哪些入口。 */

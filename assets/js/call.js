@@ -1,26 +1,69 @@
 /* =====================================================================
-   PATS — 通話狀態：撥號中 → 響鈴中 → 通話中 → 已掛斷
+   PATS — 語音通話（WebRTC + Socket.io 信令）
+   流程：撥號 → 響鈴 → 接通 → 通話中 → 掛斷
    ===================================================================== */
 
 var PatsCall = (function () {
   'use strict';
 
+  var SIGNAL_KEY = 'pats.signalingUrl';
   var socket = null;
   var session = null;
+  var currentUser = null;
   var generation = 0;
   var timerId = null;
   var muted = false;
+  var signalState = 'idle'; // idle | connecting | online | offline | blocked
+  var listeners = [];
+  var reconnectTimer = null;
 
   function $(id) { return document.getElementById(id); }
 
   function iceServers() {
     var configured = PATS.state.config.iceServers;
     if (configured && configured.length) return configured;
-    return [{ urls: 'stun:stun.l.google.com:19302' }];
+    return [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ];
   }
 
   function signalingUrl() {
-    return PATS.state.config.signalingUrl || '';
+    try {
+      var saved = window.localStorage.getItem(SIGNAL_KEY);
+      if (saved && saved.trim()) return saved.trim().replace(/\/$/, '');
+    } catch (e) { /* ignore */ }
+    return String((PATS.state.config && PATS.state.config.signalingUrl) || '').replace(/\/$/, '');
+  }
+
+  function setSignalingUrl(url) {
+    url = String(url || '').trim().replace(/\/$/, '');
+    try {
+      if (url) window.localStorage.setItem(SIGNAL_KEY, url);
+      else window.localStorage.removeItem(SIGNAL_KEY);
+    } catch (e) { /* ignore */ }
+    if (currentUser) connect(currentUser);
+    return signalingUrl();
+  }
+
+  function isBlockedMixedContent(url) {
+    return location.protocol === 'https:' && /^http:\/\//i.test(url || '');
+  }
+
+  function setSignalState(next) {
+    if (signalState === next) return;
+    signalState = next;
+    listeners.forEach(function (fn) {
+      try { fn(signalState); } catch (e) { /* ignore */ }
+    });
+  }
+
+  function onSignalChange(fn) {
+    listeners.push(fn);
+    try { fn(signalState); } catch (e) { /* ignore */ }
+    return function () {
+      listeners = listeners.filter(function (x) { return x !== fn; });
+    };
   }
 
   /* --------------------------------------------------------------- 畫面 */
@@ -67,18 +110,74 @@ var PatsCall = (function () {
 
   /* ------------------------------------------------------------- 連線 */
 
-  function connect(user) {
-    var url = signalingUrl();
-    if (!url || typeof io !== 'function') return;
-    if (socket) socket.disconnect();
+  function clearReconnect() {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
 
-    socket = io(url, { autoConnect: true, transports: ['websocket', 'polling'] });
-    socket.on('connect', function () {
-      socket.emit('register', {
-        userId: user.id,
-        name: user.displayName || user.username || user.email
-      });
+  function scheduleReconnect() {
+    clearReconnect();
+    if (!currentUser || !signalingUrl()) return;
+    reconnectTimer = setTimeout(function () {
+      if (currentUser && (!socket || !socket.connected)) connect(currentUser);
+    }, 2500);
+  }
+
+  function registerSelf() {
+    if (!socket || !currentUser) return;
+    socket.emit('register', {
+      userId: currentUser.id,
+      name: currentUser.displayName || currentUser.username || currentUser.email
     });
+  }
+
+  function connect(user) {
+    currentUser = user || currentUser;
+    clearReconnect();
+
+    var url = signalingUrl();
+    if (!url || typeof io !== 'function' || !currentUser) {
+      setSignalState('idle');
+      return;
+    }
+
+    if (isBlockedMixedContent(url)) {
+      setSignalState('blocked');
+      if (socket) {
+        socket.disconnect();
+        socket = null;
+      }
+      return;
+    }
+
+    if (socket) {
+      socket.removeAllListeners();
+      socket.disconnect();
+      socket = null;
+    }
+
+    setSignalState('connecting');
+    socket = io(url, {
+      autoConnect: true,
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1500
+    });
+
+    socket.on('connect', function () {
+      setSignalState('online');
+      registerSelf();
+    });
+    socket.on('disconnect', function () {
+      setSignalState('offline');
+      scheduleReconnect();
+    });
+    socket.on('connect_error', function () {
+      setSignalState('offline');
+      scheduleReconnect();
+    });
+
     socket.on('incoming-call', onIncoming);
     socket.on('call-accepted', onAccepted);
     socket.on('call-rejected', function () { finish('對方已拒絕'); });
@@ -109,11 +208,15 @@ var PatsCall = (function () {
   }
 
   function disconnect() {
+    clearReconnect();
     finish(null);
+    currentUser = null;
     if (socket) {
+      socket.removeAllListeners();
       socket.disconnect();
       socket = null;
     }
+    setSignalState('idle');
   }
 
   function sameCall(payload) {
@@ -125,6 +228,18 @@ var PatsCall = (function () {
     socket.emit(event, Object.assign({ to: session.peerId, callId: session.callId }, extra || {}));
   }
 
+  function dialHint() {
+    var url = signalingUrl();
+    if (!url) return '尚未設定通話伺服器。請到「設定 → 通話」填入信令網址。';
+    if (isBlockedMixedContent(url)) {
+      return '目前是 HTTPS 網站，無法連 HTTP 信令。請在後端啟動「HTTPS 隧道」，再到設定貼上 https:// 開頭的網址；或改用本機 http://127.0.0.1:8765 測試。';
+    }
+    if (!socket || !socket.connected) {
+      return '通話伺服器未連線。請在後端電腦執行「啟動信令.bat」，確認 ' + url + '/health 可開啟。';
+    }
+    return '';
+  }
+
   /* ------------------------------------------------------------- 通話 */
 
   function dial(peer) {
@@ -133,12 +248,10 @@ var PatsCall = (function () {
       return;
     }
     if (peer.id === (PATS.state.user && PATS.state.user.id)) return;
-    if (!signalingUrl()) {
-      PATS.toast('尚未設定通話伺服器。請在 config.js 填入 signalingUrl。', 'error');
-      return;
-    }
-    if (!socket || !socket.connected) {
-      PATS.toast('通話伺服器未連線。請先在 voip 資料夾執行 npm start。', 'error');
+
+    var hint = dialHint();
+    if (hint) {
+      PATS.toast(hint, 'error');
       return;
     }
     if (session) {
@@ -146,9 +259,19 @@ var PatsCall = (function () {
       return;
     }
 
+    socket.emit('check-peer', { userId: peer.id }, function (res) {
+      if (!res || !res.ok || !res.online) {
+        PATS.toast('對方目前不在線上（尚未連上通話伺服器）。', 'error');
+        return;
+      }
+      startDial(peer);
+    });
+  }
+
+  function startDial(peer) {
     var token = begin(peer, true);
     paintPeer(peer.name);
-    setStatus('撥號中');
+    setStatus('撥號中…');
     setActions('dialing');
     showLayer();
 
@@ -160,7 +283,7 @@ var PatsCall = (function () {
       emit('call-user', { offer: offer });
     }).catch(function (err) {
       if (!alive(token)) return;
-      finish(err && err.message ? err.message : '無法開始通話');
+      finish(err && err.message ? err.message : '無法開始通話（請允許麥克風）');
     });
   }
 
@@ -174,16 +297,19 @@ var PatsCall = (function () {
     session.callId = payload.callId;
     session.offer = payload.offer;
     paintPeer(payload.fromName);
-    setStatus('響鈴中');
+    setStatus('來電…');
     setActions('ringing');
     showLayer();
+    try {
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
+    } catch (e) { /* ignore */ }
   }
 
   function accept() {
     if (!session || session.phase !== 'ringing') return;
     var token = generation;
     var offer = session.offer;
-    setStatus('接通中');
+    setStatus('接通中…');
     setActions('connecting');
 
     openMedia(token).then(function () {
@@ -196,7 +322,7 @@ var PatsCall = (function () {
     }).catch(function (err) {
       if (!alive(token)) return;
       emit('reject-call', {});
-      finish(err && err.message ? err.message : '無法接聽');
+      finish(err && err.message ? err.message : '無法接聽（請允許麥克風）');
     });
   }
 
@@ -222,7 +348,7 @@ var PatsCall = (function () {
   function onAccepted(payload) {
     if (!sameCall(payload) || !session || !session.pc) return;
     session.phase = 'connecting';
-    setStatus('接通中');
+    setStatus('接通中…');
     setActions('connecting');
     session.pc.acceptAnswer(payload.answer).catch(function () { finish('無法建立通話'); });
   }
@@ -266,7 +392,7 @@ var PatsCall = (function () {
   function restart() {
     if (!session || !session.pc) return;
     if (session.retried) {
-      finish('無法穿越網路。請確認 TURN 伺服器已啟動，且防火牆有放行 UDP。');
+      finish('無法穿越網路。跨網段請架設 TURN（Coturn）。');
       return;
     }
     session.retried = true;
@@ -370,6 +496,11 @@ var PatsCall = (function () {
   return {
     connect: connect,
     disconnect: disconnect,
-    dial: dial
+    dial: dial,
+    signalingUrl: signalingUrl,
+    setSignalingUrl: setSignalingUrl,
+    signalState: function () { return signalState; },
+    onSignalChange: onSignalChange,
+    isConnected: function () { return !!(socket && socket.connected); }
   };
 })();

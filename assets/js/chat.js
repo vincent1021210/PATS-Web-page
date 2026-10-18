@@ -170,8 +170,14 @@ var PatsChat = (function () {
       ]),
       el('div', { class: 'actions' }, [
         conv.type === 'dm' ? el('button', {
-          class: 'icon-btn', type: 'button', title: '語音通話', 'aria-label': '語音通話',
-          onclick: function () { PatsCall.dial(peerOf(conv)); }
+          class: 'icon-btn call-btn', type: 'button', title: '語音通話', 'aria-label': '語音通話',
+          onclick: function () {
+            if (!window.PatsCall) {
+              PATS.toast('通話模組尚未載入。', 'error');
+              return;
+            }
+            PatsCall.dial(peerOf(conv));
+          }
         }, [icon('call')]) : null,
         el('button', {
           class: 'icon-btn', type: 'button', title: '更多',

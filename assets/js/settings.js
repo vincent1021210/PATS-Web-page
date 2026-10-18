@@ -22,6 +22,7 @@ var PatsSettings = (function () {
   var TABS = [
     { id: 'archive', label: '封存設定', view: 'settings' },
     { id: 'account', label: '帳號安全', view: 'profile' },
+    { id: 'call', label: '通話', view: 'call' },
     { id: 'admin', label: '帳號管理', view: 'admin', adminOnly: true },
     { id: 'switch', label: '帳號切換', view: 'switch' }
   ];
@@ -38,6 +39,7 @@ var PatsSettings = (function () {
     var content = section === 'account' ? renderAccount()
                 : section === 'switch' ? renderSwitch()
                 : section === 'admin' ? renderAdmin()
+                : section === 'call' ? renderCall()
                 : renderArchive();
 
     var visibleTabs = TABS.filter(function (tab) {
@@ -161,6 +163,82 @@ var PatsSettings = (function () {
     PATS.rpc('clearCache', {})
       .then(function () { PATS.toast('快取已清除。', 'success'); })
       .catch(PatsChat.handleError);
+  }
+
+  /* ----------------------------------------------------------- 通話設定 */
+
+  function renderCall() {
+    var current = (window.PatsCall && PatsCall.signalingUrl()) || '';
+    var input = el('input', {
+      class: 'input',
+      type: 'url',
+      value: current,
+      placeholder: 'http://192.168.1.68:3001 或 https://xxxx.loca.lt'
+    });
+    var status = el('p', {
+      class: 'settings-lead',
+      text: signalLabel()
+    });
+    var saveButton = el('button', {
+      class: 'btn btn-primary', type: 'button', text: '儲存並重新連線',
+      onclick: function () {
+        if (!window.PatsCall) {
+          PATS.toast('通話模組尚未載入。', 'error');
+          return;
+        }
+        PatsCall.setSignalingUrl(input.value);
+        status.textContent = signalLabel();
+        PATS.toast('已更新通話伺服器設定。', 'success');
+      }
+    });
+    var clearButton = el('button', {
+      class: 'btn btn-ghost', type: 'button', text: '還原預設',
+      onclick: function () {
+        if (!window.PatsCall) return;
+        PatsCall.setSignalingUrl('');
+        input.value = PatsCall.signalingUrl();
+        status.textContent = signalLabel();
+        PATS.toast('已還原為 config.js 預設值。', 'success');
+      }
+    });
+
+    if (window.PatsCall) {
+      PatsCall.onSignalChange(function () { status.textContent = signalLabel(); });
+    }
+
+    return el('div', { class: 'settings-inner' }, sectionHead(
+      '語音通話',
+      '信令伺服器負責「誰打給誰」。聲音走 WebRTC，不經過 Apps Script。'
+    ).concat([
+      el('section', { class: 'card settings-card' }, [
+        cardHead('call', '信令伺服器網址',
+          '同 Wi‑Fi：填後端電腦的 http://內網IP:3001。若使用 GitHub Pages（HTTPS），必須填 https:// 開頭的隧道網址。'),
+        el('div', { class: 'field', style: 'margin-top:14px' }, [
+          el('label', { class: 'field-label', text: 'signalingUrl' }),
+          input
+        ]),
+        status,
+        el('div', { class: 'settings-actions', style: 'margin-top:16px' }, [clearButton, saveButton])
+      ]),
+      el('section', { class: 'card settings-card' }, [
+        cardHead('shield', '測試步驟',
+          '1) 後端執行「啟動信令.bat」→ 2) 若要用手機開 github.io，再執行「啟動HTTPS隧道.bat」並把網址貼到上方 → 3) 雙方登入後看左下「通話就緒」→ 4) 開私訊按綠色電話。')
+      ])
+    ]));
+  }
+
+  function signalLabel() {
+    if (!window.PatsCall) return '通話模組未載入';
+    var st = PatsCall.signalState();
+    var url = PatsCall.signalingUrl() || '（未設定）';
+    var map = {
+      online: '狀態：已連線（通話就緒）',
+      connecting: '狀態：連線中…',
+      offline: '狀態：離線（請確認後端 npm start）',
+      blocked: '狀態：被瀏覽器阻擋（HTTPS 頁面不能連 HTTP 信令）',
+      idle: '狀態：尚未連線'
+    };
+    return (map[st] || map.idle) + '｜' + url;
   }
 
   /* ------------------------------------------------------- 帳號安全設定 */
