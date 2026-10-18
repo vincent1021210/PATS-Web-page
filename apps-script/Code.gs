@@ -90,7 +90,10 @@ function privateActions_() {
     changePassword: apiChangePassword_,
     updateSettings: apiUpdateSettings_,
     clearCache: apiClearCache_,
-    storageUsage: apiStorageUsage_
+    storageUsage: apiStorageUsage_,
+    adminListUsers: apiAdminListUsers_,
+    adminClearPassword: apiAdminClearPassword_,
+    adminDeleteUser: apiAdminDeleteUser_
   };
 }
 

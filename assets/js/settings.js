@@ -22,6 +22,7 @@ var PatsSettings = (function () {
   var TABS = [
     { id: 'archive', label: '封存設定', view: 'settings' },
     { id: 'account', label: '帳號安全', view: 'profile' },
+    { id: 'admin', label: '帳號管理', view: 'admin', adminOnly: true },
     { id: 'switch', label: '帳號切換', view: 'switch' }
   ];
 
@@ -29,11 +30,21 @@ var PatsSettings = (function () {
     var pane = $('#settings-pane');
     pane.innerHTML = '';
 
+    if (section === 'admin' && !(state.user && state.user.isAdmin)) {
+      PatsMain.setView('settings');
+      return;
+    }
+
     var content = section === 'account' ? renderAccount()
                 : section === 'switch' ? renderSwitch()
+                : section === 'admin' ? renderAdmin()
                 : renderArchive();
 
-    var tabs = el('nav', { class: 'settings-tabs' }, TABS.map(function (tab) {
+    var visibleTabs = TABS.filter(function (tab) {
+      return !tab.adminOnly || (state.user && state.user.isAdmin);
+    });
+
+    var tabs = el('nav', { class: 'settings-tabs' }, visibleTabs.map(function (tab) {
       return el('button', {
         class: tab.id === section ? 'is-active' : '',
         type: 'button',
@@ -272,6 +283,115 @@ var PatsSettings = (function () {
       })
       .catch(PatsChat.handleError)
       .finally(function () { button.disabled = false; });
+  }
+
+  /* --------------------------------------------------------- 管理員 */
+
+  function renderAdmin() {
+    var list = el('div', { class: 'admin-user-list', id: 'admin-user-list' }, [
+      el('div', { class: 'admin-loading', text: '載入帳號中…' })
+    ]);
+    var search = el('input', {
+      class: 'input', type: 'search', placeholder: '搜尋信箱、名稱或帳號'
+    });
+    var searchTimer = null;
+    search.addEventListener('input', function () {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(function () { loadAdminUsers(list, search.value.trim()); }, 220);
+    });
+
+    loadAdminUsers(list, '');
+
+    return el('div', { class: 'settings-inner' }, sectionHead(
+      '帳號管理',
+      '管理員可清除使用者的登入密碼，或整個刪除帳號。清除密碼後對方需改用 Google 登入或自行重設密碼。'
+    ).concat([
+      el('section', { class: 'card settings-card' }, [
+        cardHead('manage_accounts', '使用者清單',
+          '清除密碼不會刪除帳號；刪除帳號會一併移除工作階段與聯絡人，歷史訊息仍會保留。'),
+        el('div', { class: 'field', style: 'margin-bottom:16px' }, [
+          el('div', { class: 'input-wrap' }, [
+            icon('search'),
+            search
+          ])
+        ]),
+        list
+      ])
+    ]));
+  }
+
+  function loadAdminUsers(container, keyword) {
+    container.innerHTML = '';
+    container.appendChild(el('div', { class: 'admin-loading', text: '載入帳號中…' }));
+    PATS.rpc('adminListUsers', { q: keyword })
+      .then(function (users) {
+        container.innerHTML = '';
+        if (!users.length) {
+          container.appendChild(el('div', {
+            class: 'admin-empty',
+            text: keyword ? '找不到符合的帳號。' : '目前沒有任何帳號。'
+          }));
+          return;
+        }
+        users.forEach(function (user) {
+          container.appendChild(adminUserRow(user, container, keyword));
+        });
+      })
+      .catch(PatsChat.handleError);
+  }
+
+  function adminUserRow(user, container, keyword) {
+    var me = state.user && state.user.id === user.id;
+    var meta = [
+      user.email,
+      user.roleLabel || user.role,
+      user.hasPassword ? '有密碼' : '無密碼',
+      user.provider === 'google' ? 'Google' : '帳密'
+    ].join(' · ');
+
+    var clearBtn = el('button', {
+      class: 'btn btn-ghost', type: 'button', text: '清除密碼',
+      disabled: user.hasPassword ? null : 'disabled',
+      onclick: function () { clearUserPassword(user, container, keyword); }
+    });
+    var deleteBtn = el('button', {
+      class: 'btn btn-ghost is-danger-text', type: 'button', text: '刪除帳號',
+      disabled: me ? 'disabled' : null,
+      onclick: function () { deleteUserAccount(user, container, keyword); }
+    });
+
+    return el('div', { class: 'admin-user-row' }, [
+      PATS.avatarNode(user.displayName, user.avatarUrl, 'avatar-sm'),
+      el('div', { class: 'admin-user-meta' }, [
+        el('div', { class: 'admin-user-name', text: user.displayName + (me ? '（你）' : '') }),
+        el('div', { class: 'admin-user-sub', text: meta })
+      ]),
+      el('div', { class: 'admin-user-actions' }, [clearBtn, deleteBtn])
+    ]);
+  }
+
+  function clearUserPassword(user, container, keyword) {
+    if (!window.confirm('確定清除「' + user.displayName + '」的登入密碼？\n清除後該帳號無法再用密碼登入，需改用 Google 或忘記密碼重設。')) {
+      return;
+    }
+    PATS.rpc('adminClearPassword', { userId: user.id })
+      .then(function () {
+        PATS.toast('已清除 ' + user.email + ' 的密碼。', 'success');
+        loadAdminUsers(container, keyword);
+      })
+      .catch(PatsChat.handleError);
+  }
+
+  function deleteUserAccount(user, container, keyword) {
+    if (!window.confirm('確定刪除帳號「' + user.displayName + '」（' + user.email + '）？\n此操作無法復原。')) {
+      return;
+    }
+    PATS.rpc('adminDeleteUser', { userId: user.id })
+      .then(function () {
+        PATS.toast('已刪除帳號 ' + user.email + '。', 'success');
+        loadAdminUsers(container, keyword);
+      })
+      .catch(PatsChat.handleError);
   }
 
   /* --------------------------------------------------------- 帳號切換頁 */

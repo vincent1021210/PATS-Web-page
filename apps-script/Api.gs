@@ -560,3 +560,90 @@ function apiStorageUsage_(user) {
   });
   return { bytes: bytes };
 }
+
+/* -------------------------------------------------------------- 管理員 */
+
+function apiAdminListUsers_(user, payload) {
+  requireApiContext_(user);
+  requireAdmin_(user);
+  payload = payload || {};
+  var keyword = String(payload.q || '').trim().toLowerCase();
+
+  return dbAll_('users')
+    .map(function (row) {
+      return {
+        id: row.id,
+        email: row.email,
+        username: row.username,
+        displayName: row.displayName || row.username || row.email,
+        role: roleOf_(row),
+        roleLabel: (ROLES[roleOf_(row)] || {}).label || roleOf_(row),
+        isAdmin: isAdmin_(row),
+        provider: row.provider || 'password',
+        hasPassword: !!(row.passwordHash && String(row.passwordHash)),
+        status: row.status || 'active',
+        createdAt: row.createdAt || ''
+      };
+    })
+    .filter(function (row) {
+      if (!keyword) return true;
+      return String(row.email).toLowerCase().indexOf(keyword) >= 0 ||
+             String(row.displayName).toLowerCase().indexOf(keyword) >= 0 ||
+             String(row.username).toLowerCase().indexOf(keyword) >= 0;
+    })
+    .sort(function (a, b) {
+      return String(a.email).localeCompare(String(b.email));
+    });
+}
+
+/** 清除指定帳號的登入密碼；之後只能用 Google 登入或走忘記密碼重設。 */
+function apiAdminClearPassword_(user, payload) {
+  requireApiContext_(user);
+  requireAdmin_(user);
+  var target = resolveAdminTarget_(user, payload);
+  if (!target.passwordHash) throw new Error('PASSWORD_ALREADY_CLEARED');
+
+  dbUpdate_('users', target.id, { passwordHash: '', passwordSalt: '' });
+  revokeSessionsForUser_(target.id);
+  return { id: target.id, email: target.email, hasPassword: false };
+}
+
+/** 刪除帳號：使用者列、工作階段、聯絡人與對話成員一併移除。訊息本體保留。 */
+function apiAdminDeleteUser_(user, payload) {
+  requireApiContext_(user);
+  requireAdmin_(user);
+  var target = resolveAdminTarget_(user, payload);
+  if (target.id === user.id) throw new Error('CANNOT_DELETE_SELF');
+
+  revokeSessionsForUser_(target.id);
+
+  dbFilter_('contacts', function (c) {
+    return c.userId === target.id || c.peerId === target.id;
+  }).forEach(function (c) { dbDelete_('contacts', c.id); });
+
+  dbFilter_('participants', function (p) {
+    return p.userId === target.id;
+  }).forEach(function (p) { dbDelete_('participants', p.id); });
+
+  dbFilter_('resets', function (r) {
+    return r.userId === target.id ||
+           String(r.email || '').toLowerCase() === String(target.email).toLowerCase();
+  }).forEach(function (r) { dbDelete_('resets', r.id); });
+
+  dbDelete_('users', target.id);
+  return { deleted: true, id: target.id, email: target.email };
+}
+
+function resolveAdminTarget_(admin, payload) {
+  var account = String((payload && (payload.account || payload.email)) || '').trim();
+  var id = String((payload && payload.userId) || '').trim();
+  var target = id ? dbGet_('users', id) : findUserByAccount_(account);
+  if (!target) throw new Error('USER_NOT_FOUND');
+  return target;
+}
+
+function revokeSessionsForUser_(userId) {
+  dbFilter_('sessions', function (s) {
+    return s.userId === userId;
+  }).forEach(function (s) { dbDelete_('sessions', s.token); });
+}

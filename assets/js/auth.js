@@ -492,6 +492,9 @@ var PatsAuth = (function () {
     showLoginPanel: function () {
       resetRegisterForm();
       switchPanel('login');
+      // GIS 常在 #auth 仍 hidden 時就載入完；當時 offsetWidth=0 會跳過繪製。
+      // 登入畫面真正顯示後再補畫一次。
+      paintGoogleButton($('#google-slot'), 'signin_with');
     }
   };
 })();

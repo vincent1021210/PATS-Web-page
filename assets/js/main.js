@@ -9,7 +9,12 @@ var PatsMain = (function () {
   var state = PATS.state;
 
   /* Rail 上的按鈕 → 設定區實際要顯示的子畫面 */
-  var SETTINGS_SECTION = { settings: 'archive', profile: 'account', switch: 'switch' };
+  var SETTINGS_SECTION = {
+    settings: 'archive',
+    profile: 'account',
+    admin: 'admin',
+    switch: 'switch'
+  };
 
   /* 需要對話列表的畫面，家長身分看不到這些 */
   var CHAT_VIEWS = ['dm', 'group', 'archive'];
@@ -46,6 +51,7 @@ var PatsMain = (function () {
 
   function showAuth() {
     PatsChat.stopPolling();
+    if (window.PatsCall) PatsCall.disconnect();
     PATS.hide($('#loading'));
     PATS.hide($('#app'));
     PATS.show($('#auth'));
@@ -72,6 +78,7 @@ var PatsMain = (function () {
     }
     setView('dm', { autoSelect: true });
     PatsChat.startPolling();
+    if (window.PatsCall) PatsCall.connect(user);
   }
 
   /** 依身分決定側欄要出現哪些入口。 */
@@ -93,6 +100,12 @@ var PatsMain = (function () {
   function renderIdentity() {
     var user = state.user || {};
     $('#me-name').textContent = user.displayName || user.username || 'PATS';
+    var roleNode = $('#me-role');
+    if (roleNode) {
+      roleNode.textContent = user.isAdmin
+        ? '管理員'
+        : (user.roleLabel || '成員');
+    }
     var avatar = $('#me-avatar');
     avatar.innerHTML = '';
     if (user.avatarUrl) {

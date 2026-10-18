@@ -37,6 +37,24 @@ function initializeProject() {
 }
 
 /**
+ * 一鍵寫入 Google 登入用的 Client ID（解決「後端尚未設定 Google 用戶端 ID」）。
+ *
+ * 用法：Apps Script 編輯器上方函式選單選 setupGoogleClientId → 按「執行」。
+ * 執行完後，用瀏覽器開 /exec 網址，應看到 googleClientId 有值。
+ * 不需要重新部署（屬性是執行期讀取的）。
+ */
+function setupGoogleClientId() {
+  var id = '354935544437-1vrje0je178afce6nturpghuu5r16qp6.apps.googleusercontent.com';
+  PropertiesService.getScriptProperties().setProperty('GOOGLE_CLIENT_ID', id);
+  var saved = googleClientId_();
+  var report = '已寫入 GOOGLE_CLIENT_ID：\n' + saved +
+    '\n\n請用瀏覽器開部署的 /exec 網址確認 googleClientId 有值，' +
+    '\n再回 PATS 網頁強制重新整理後試 Google 登入。';
+  Logger.log(report);
+  return report;
+}
+
+/**
  * 相容用的別名。
  *
  * 這個名字在舊版是內部函式，編輯器如果還記著它會出現

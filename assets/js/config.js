@@ -26,5 +26,26 @@ var PATS_CONFIG = {
    *
    * 範例：'1234567890-abcdefg.apps.googleusercontent.com'
    */
-  googleClientId: '354935544437-1vrje0je178afce6nturpghuu5r16qp6.apps.googleusercontent.com'
+  googleClientId: '354935544437-1vrje0je178afce6nturpghuu5r16qp6.apps.googleusercontent.com',
+
+  /**
+   * 語音通話的信令伺服器（跑在「另一台電腦」上的 Node，不是 Apps Script）。
+   * 另一台電腦：複製整個 voip/ 資料夾 → npm install → npm start
+   * 然後把下面改成那台的位址，例如：
+   *   同網段測試：'http://192.168.1.50:3001'
+   *   正式／GitHub Pages（HTTPS 頁面）必須用 wss，例如 Cloudflare Tunnel：
+   *   'https://pats-signal.example.com'
+   * 留空字串會停用語音按鈕的連線。
+   */
+  signalingUrl: 'http://192.168.1.68:3001',
+
+  /**
+   * STUN 用來找得到對方；跨網段或公司防火牆後還需要自己的 TURN。
+   * 架好 Coturn 後，把下面註解打開並改成你的主機。帳密會出現在網頁裡，
+   * 只拿來當中繼認證，不要用在別的系統。
+   */
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' }
+    // { urls: 'turn:YOUR_PUBLIC_IP:3478', username: 'pats', credential: 'change-this-password' }
+  ]
 };

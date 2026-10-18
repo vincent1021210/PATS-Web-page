@@ -89,33 +89,47 @@ function purgeExpiredSessions() {
 /* ------------------------------------------------------------------ 身分 */
 
 /**
- * 三種身分與各自允許的信箱網域。註冊時只認這些網域，
- * 所以身分不是使用者自己說了算，而是由學校配發的信箱決定。
+ * 身分標籤。已不再依信箱網域限制註冊／登入，任何有效 email 都可使用。
+ * domains 留空：不再從網域自動推身分。
  */
 var ROLES = {
-  student: { label: '學生', domains: ['smail.hc.edu.tw'] },
-  teacher: { label: '老師', domains: ['lsps.hc.edu.tw', 'tmail.hc.edu.tw'] },
-  parent: { label: '家長', domains: ['gmail.com'] },
-  member: { label: '成員', domains: [] }
+  student: { label: '學生', domains: [] },
+  teacher: { label: '老師', domains: [] },
+  parent: { label: '家長', domains: [] },
+  member: { label: '成員', domains: [] },
+  admin: { label: '管理員', domains: [] }
 };
 
 function emailDomain_(email) {
   return String(email || '').trim().toLowerCase().split('@')[1] || '';
 }
 
-/** 由信箱網域反推身分，認不出來時回傳空字串。 */
+/** 已停用網域推身分；保留函式以免舊呼叫端出錯。 */
 function roleOfEmail_(email) {
-  var domain = emailDomain_(email);
-  var found = '';
-  Object.keys(ROLES).forEach(function (role) {
-    if (!found && ROLES[role].domains.indexOf(domain) >= 0) found = role;
-  });
-  return found;
+  return '';
 }
 
-/** 舊資料沒有 role 欄位，用信箱推回去，再不行就當學生。 */
+/** 舊資料沒有 role 欄位時，一律當一般成員。 */
 function roleOf_(user) {
-  return String(user.role || '') || roleOfEmail_(user.email) || 'student';
+  if (isAdmin_(user)) return 'admin';
+  return String(user.role || '') || 'member';
+}
+
+/**
+ * 管理員判定：role 為 admin，或信箱等於指令碼屬性 ADMIN_EMAIL。
+ * 後者讓既有的管理員帳號不必改資料表也能用管理功能。
+ */
+function isAdmin_(user) {
+  if (!user) return false;
+  if (String(user.role || '') === 'admin') return true;
+  var adminEmail = (PropertiesService.getScriptProperties().getProperty('ADMIN_EMAIL') || '')
+    .trim().toLowerCase();
+  return !!adminEmail && String(user.email || '').toLowerCase() === adminEmail;
+}
+
+function requireAdmin_(user) {
+  if (!isAdmin_(user)) throw new Error('ADMIN_REQUIRED');
+  return user;
 }
 
 /* -------------------------------------------------------------- 使用者 */
@@ -131,6 +145,7 @@ function publicUser_(user) {
     provider: user.provider || 'password',
     role: role,
     roleLabel: ROLES[role] ? ROLES[role].label : role,
+    isAdmin: isAdmin_(user),
     canChat: role !== 'parent',
     linkedStudent: null,
     settings: Object.assign({}, DEFAULT_USER_SETTINGS, parseJson_(user.settings, {}))
@@ -177,7 +192,7 @@ function createUser_(fields) {
     settings: JSON.stringify(DEFAULT_USER_SETTINGS),
     createdAt: nowIso_(),
     lastSeenAt: nowIso_(),
-    role: fields.role || roleOfEmail_(email) || 'student',
+    role: fields.role || 'member',
     linkedStudentId: fields.linkedStudentId || ''
   });
 }
@@ -209,12 +224,20 @@ function createAdminAccount() {
   }
 
   setup();
+  var existing = findUserByAccount_(email);
+  if (existing) {
+    dbUpdate_('users', existing.id, { role: 'admin' });
+    props.deleteProperty('ADMIN_PASSWORD');
+    return '帳號 ' + email + ' 已設為管理員。ADMIN_PASSWORD 屬性已自動刪除。';
+  }
+
   var user = createUser_({
     email: email,
     username: name || email.split('@')[0],
     displayName: name || email.split('@')[0],
     password: password,
-    provider: 'password'
+    provider: 'password',
+    role: 'admin'
   });
 
   props.deleteProperty('ADMIN_PASSWORD');
@@ -280,7 +303,6 @@ function validateSignup_(payload) {
 
   var email = String(payload.email || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('EMAIL_INVALID');
-  if (!/^[a-z0-9._%+-]+$/.test(email.split('@')[0])) throw new Error('EMAIL_LOCAL_INVALID');
   if (findUserByAccount_(email)) throw new Error('EMAIL_TAKEN');
 
   var displayName = String(payload.displayName || '').trim();

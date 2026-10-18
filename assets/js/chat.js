@@ -133,6 +133,15 @@ var PatsChat = (function () {
 
   /* ------------------------------------------------------------- 對話區 */
 
+  function peerOf(conv) {
+    var members = (conv && conv.members) || [];
+    var me = state.user && state.user.id;
+    for (var i = 0; i < members.length; i++) {
+      if (members[i].id !== me) return members[i];
+    }
+    return null;
+  }
+
   function renderPlaceholder() {
     var meta = VIEW_META[state.view] || VIEW_META.dm;
     var pane = $('#chat-pane');
@@ -160,6 +169,10 @@ var PatsChat = (function () {
         el('div', { class: 'sub', text: subtitle })
       ]),
       el('div', { class: 'actions' }, [
+        conv.type === 'dm' ? el('button', {
+          class: 'icon-btn', type: 'button', title: '語音通話', 'aria-label': '語音通話',
+          onclick: function () { PatsCall.dial(peerOf(conv)); }
+        }, [icon('call')]) : null,
         el('button', {
           class: 'icon-btn', type: 'button', title: '更多',
           onclick: function (event) { openConversationMenu(event.currentTarget, conv); }

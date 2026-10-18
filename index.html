@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=archive,arrow_back,badge,chat,chat_bubble,chevron_right,child_care,delete_sweep,edit_square,error,forum,group_add,groups,history,history_edu,inbox,key,lock,lock_reset,login,logout,mail,manage_accounts,mark_email_read,mop,more_horiz,more_vert,person,person_add,pin,refresh,report,save,school,search,send,settings,shield,storage,supervisor_account,unarchive,visibility,visibility_off&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&icon_names=archive,arrow_back,badge,call,call_end,chat,chat_bubble,chevron_right,child_care,delete_sweep,edit_square,error,forum,group_add,groups,history,history_edu,inbox,key,lock,lock_reset,login,logout,mail,manage_accounts,mark_email_read,mic,mic_off,mop,more_horiz,more_vert,person,person_add,pin,refresh,report,save,school,search,send,settings,shield,storage,supervisor_account,unarchive,visibility,visibility_off&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="assets/css/styles.css">
 </head>
@@ -306,7 +306,7 @@
         <div class="avatar avatar-lg" id="me-avatar" aria-hidden="true">P</div>
         <div class="meta">
           <div class="name" id="me-name">PATS</div>
-          <div class="role">學生通訊</div>
+          <div class="role" id="me-role">學生通訊</div>
           <div class="status">上線中</div>
         </div>
       </div>
@@ -409,13 +409,40 @@
     </section>
   </div>
 
+  <div id="call-layer" class="call-layer hidden" role="dialog" aria-modal="true" aria-labelledby="call-name">
+    <div class="call-card">
+      <div class="avatar avatar-lg" id="call-avatar" aria-hidden="true">P</div>
+      <h2 id="call-name">對方</h2>
+      <p id="call-status">撥號中</p>
+      <div class="call-actions">
+        <button id="call-mute" class="call-round" type="button" aria-label="靜音麥克風">
+          <span class="material-symbols-outlined">mic</span>
+        </button>
+        <button id="call-reject" class="call-round is-danger hidden" type="button" aria-label="拒絕">
+          <span class="material-symbols-outlined">call_end</span>
+        </button>
+        <button id="call-accept" class="call-round is-ok hidden" type="button" aria-label="接聽">
+          <span class="material-symbols-outlined">call</span>
+        </button>
+        <button id="call-hangup" class="call-round is-danger hidden" type="button" aria-label="掛斷">
+          <span class="material-symbols-outlined">call_end</span>
+        </button>
+      </div>
+    </div>
+    <audio id="call-remote" autoplay playsinline></audio>
+  </div>
+
   <div id="modal-root"></div>
   <div id="menu-root"></div>
   <div class="toast-stack" id="toast-root"></div>
 
+  <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
   <script src="assets/js/config.js"></script>
   <script src="assets/js/core.js"></script>
   <script src="assets/js/auth.js"></script>
+  <script src="assets/js/AudioStreamManager.js"></script>
+  <script src="assets/js/WebRTCManager.js"></script>
+  <script src="assets/js/call.js"></script>
   <script src="assets/js/chat.js"></script>
   <script src="assets/js/settings.js"></script>
   <script src="assets/js/main.js"></script>
