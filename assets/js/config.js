@@ -29,23 +29,26 @@ var PATS_CONFIG = {
   googleClientId: '354935544437-1vrje0je178afce6nturpghuu5r16qp6.apps.googleusercontent.com',
 
   /**
-   * 語音通話的信令伺服器（跑在「另一台電腦」上的 Node，不是 Apps Script）。
-   * 另一台電腦：複製整個 voip/ 資料夾 → npm install → npm start
-   * 然後把下面改成那台的位址，例如：
-   *   同網段測試：'http://192.168.1.50:3001'
-   *   正式／GitHub Pages（HTTPS 頁面）必須用 wss，例如 Cloudflare Tunnel：
-   *   'https://pats-signal.example.com'
-   * 留空字串會停用語音按鈕的連線。
+   * 語音通話信令（Node + Socket.io，不是 Apps Script）。
+   *
+   * 本機／同 Wi‑Fi：'http://192.168.x.x:3001'
+   * GitHub Pages（HTTPS）必須用 https：
+   *   - 臨時：後端跑 voip/一鍵啟動.bat（localtunnel）
+   *   - 正式 $0：照 voip/oracle-free/部署說明.txt 架 Oracle + Caddy
+   *     例如 'https://pats-call.duckdns.org'
+   * 也可在 App「通話設定」覆寫，不必改此檔。
    */
   signalingUrl: 'http://192.168.1.68:3001',
 
   /**
-   * STUN 用來找得到對方；跨網段或公司防火牆後還需要自己的 TURN。
-   * 架好 Coturn 後，把下面註解打開並改成你的主機。帳密會出現在網頁裡，
-   * 只拿來當中繼認證，不要用在別的系統。
+   * STUN／TURN。同網段通常只要 Google STUN。
+   * Oracle + Coturn 部署後加上（網域與密碼見 oracle-free/.env）：
+   *   { urls: 'stun:pats-call.duckdns.org:3478' },
+   *   { urls: 'turn:pats-call.duckdns.org:3478', username: 'pats', credential: '你的密碼' }
    */
   iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' }
-    // { urls: 'turn:YOUR_PUBLIC_IP:3478', username: 'pats', credential: 'change-this-password' }
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+    // { urls: 'turn:pats-call.duckdns.org:3478', username: 'pats', credential: 'please-change-this-password' }
   ]
 };
